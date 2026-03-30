@@ -1,0 +1,4 @@
+- .Lock & .Unlock: dùng để giải quyết vấn đề xung đột dữ liệu khi có nhiều đà luồng cùng truy cập và thay đổi một biến dùng chung tại 1 thời điểm
++ Mỗi lần gọi lock bắt buộc phải có unlock. Nếu quên unlock thì chương trình sẽ bị Deadlock (treo vĩnh viễn) 
++ Cách tốt nhất để không quên Unlock là đặt defer mu.Unlock ngay sau dòng mu.Lock
++ Nhưng mà chỉ nên lock đoạn code thực sự cần bảo vệ dữ liệu. Vì sử dụng nhiều sẽ giảm performance of programming

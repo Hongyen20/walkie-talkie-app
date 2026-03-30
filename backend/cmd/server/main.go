@@ -1,50 +1,119 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 
 	"github.com/gorilla/websocket"
+
+	
 )
 
-var upgrader = websocket.Upgrader{
+var ugrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true
 	},
 }
+//MODEL
+type Client struct{
+	ID string
+	Conn *websocket.Conn
+}
 
-func handleWebsockt(w http.ResponseWriter, r *http.Request) {
-	fmt.Sprintln("Client connecting...")
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println("Upgrade error:", err)
+type Message struct{
+	From string `json:"from"`
+	Message string `json:"message"`
+}
+//Global variables
+var(
+	clients = make(map[*websocket.Conn]*Client)
+	mutex sync.Mutex
+	counterClient = 0
+)
+
+//HANDLER
+func handleWebsocket(w http.ResponseWriter, r *http.Request){
+	conn, err := ugrader.Upgrade(w, r, nil)
+	if err != nil{
+		log.Println("[ERROR Update: ", err)
 		return
 	}
-	defer conn.Close()
+	client :=registerClient(conn)
+	defer unregisterClient(conn, client.ID)
+	readLoop(client)
+}
 
-	fmt.Sprintln("Client connected!")
+//CLIENT
+func registerClient(conn *websocket.Conn) *Client{
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	counterClient++
+	id := fmt.Sprintf("user-%d", counterClient)
+
+	client := &Client{
+		ID : id,
+		Conn: conn,
+	}
+	
+	clients[conn] = client
+	
+	log.Printf("[CONNECT] %s\n", id)
+	return client
+}
+
+func unregisterClient(conn *websocket.Conn, id string){
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	delete(clients, conn)
+	conn.Close()
+
+	log.Printf("[DISCONNECTED] %s\n", id)
+}
+
+//
+func readLoop(client *Client){
 	for {
-		//Đọc message client gửi
-		messageType, msg, err := conn.ReadMessage()
-		if err != nil {
-			log.Println("Read error:", err)
-			break
+		_, msg, err := client.Conn.ReadMessage()
+		if err != nil{
+			log.Println("[ERROR] Read:", err)
+			return
 		}
-		fmt.Println("Received: ", string(msg))
+		log.Println("RECV %s: %s\n", client.ID, string(msg))
 
-		//
-		err = conn.WriteMessage(messageType, msg)
-		if err != nil {
-			log.Println("write error: ", err)
-			break
-		}
+		broadcast(client, msg)
 	}
 }
 
-func main() {
-	http.HandleFunc("/websocket", handleWebsockt)
+func broadcast(sender *Client, msg []byte){
+	message := Message{
+		From: sender.ID,
+		Message: string(msg),
+	}
+	jsonMsg, _ := json.Marshal(message)
 
-	fmt.Println("Server running at : 8080")
+	mutex.Lock()
+	defer mutex.Unlock()
+	for _, client := range clients{
+		err := client.Conn.WriteMessage(websocket.TextMessage, jsonMsg)
+		if err != nil{
+			log.Println("[ERROR] Write: ", err)
+			client.Conn.Close()
+			delete(clients, client.Conn)
+			continue
+		}
+		log.Printf("[SEND] to %s\n", client.ID)
+	}
+}
+
+
+//MAIN
+func main(){
+	http.HandleFunc("/websocket", handleWebsocket)
+	fmt.Sprintln("Server running at port :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
