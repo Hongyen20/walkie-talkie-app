@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync/atomic"
 	"walkie-talkie-backend/internal/room"
+
 	"github.com/gorilla/websocket"
+
 )
 
 var upgrader = websocket.Upgrader{
@@ -15,14 +18,16 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-var counterClient = 0
+var counterClient int64
 
 // Create a main room first
 var mainRoom = room.NewRoom("main")
 
 type Message struct {
-	From    string `json: "from"`
-	Message string `json: "message"`
+	Type    string `json:"type"` //chat - offer - answer - candidate
+	From    string `json:"from"`
+	To string `json:"to"`
+	Message string `json:"message"`
 }
 
 func HandleWebsocket(w http.ResponseWriter, r *http.Request) {
@@ -32,9 +37,8 @@ func HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//Create Client
-	counterClient++
-	id := fmt.Sprintf("user %d", counterClient)
+	//Create Client, avoid 2 user have duplicate ID
+	id := fmt.Sprintf("user %d", atomic.AddInt64(&counterClient, 1))
 
 	client := &room.Client{
 		ID:   id,
@@ -43,7 +47,7 @@ func HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 
 	mainRoom.AddClient(client)
 
-	log.Printf("[CONNECT] %s\n, id")
+	log.Printf("[CONNECT] %s\n", id)
 
 	defer func() {
 		mainRoom.RemoveClient(client)
@@ -57,15 +61,47 @@ func HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 			log.Println("Read error:", err)
 			break
 		}
-		log.Printf("[RECV] %s : %s\n", id, string(msg))
-
-		//Encapsulate message
-		m := Message{
-			From:    id,
-			Message: string(msg),
+		var incoming Message
+		if err := json.Unmarshal(msg, &incoming); err != nil{
+			incoming = Message{
+				Type:    "chat",
+				From: id,
+				Message: string(msg),
+			}
+		} else{
+			incoming.From = id
 		}
-		jsonMsg, _ := json.Marshal(m)
 
-		mainRoom.Broadcast(client, jsonMsg)
+		log.Printf("[RECV] %s | type=%s | to=%s | message=%s\n", id, incoming.Type, incoming.To, incoming.Message)
+
+		switch incoming.Type {
+		case "join":
+			//Notify for users know when someone join
+			notify := Message{
+				Type: "user-joined",
+				From: id,
+				Message: id + "entered the room",
+			}
+			jsonMsg, _:= json.Marshal(notify)
+			mainRoom.Broadcast(client, jsonMsg) //send to everyone (-client sending)
+		
+		case "offer", "answer", "ice-candidate":
+			// Forward to correct receiver
+			if incoming.To == ""{
+				log.Println("[WARN] Mising field 'to'")
+				continue
+			}
+			jsonMsg, _ := json.Marshal(incoming)
+			if err := mainRoom.SendTo(incoming.To, jsonMsg); err != nil{
+				log.Printf("[WARN] SendTo %s fail: %v\n", incoming.To, err)
+			}			
+			case "chat":
+				jsonMsg, _ := json.Marshal(incoming)
+				mainRoom.Broadcast(client, jsonMsg)
+			
+			default:
+				log.Printf("[WARN]Unknown type: %s\n", incoming.Type)
+		}
+
 	}
 }
