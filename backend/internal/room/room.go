@@ -76,7 +76,7 @@ func (r *Room) SendTo(targetID string, msg []byte) error{
 	return fmt.Errorf("Client %s not found", targetID)
 }
 
-//Get list of IDs clients (for notification when new user join)
+//Get list of IDs clients (notify when someone join)
 func (r *Room) GetClientIDs() []string{
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
