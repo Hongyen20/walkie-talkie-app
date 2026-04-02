@@ -17,7 +17,7 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-var counterClient int64
+// var counterClient int64
 
 // Create a main room first
 var mainRoom = room.NewRoom("main")
@@ -31,22 +31,29 @@ type Message struct {
 
 func HandleWebsocket(authService *service.AuthService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request){
+		
+		//Verify JWT from quey param
 		//Get token fron query param: ws//localhost:8080/websocket?token=xxx
 		tokenStr := r.URL.Query().Get("token")
 		if tokenStr == ""{
-			http.Error(w, "missing token", http.StatusUnauthorized)
+			http.Error(w, `{"error":"missing token"}`, http.StatusUnauthorized)
 			return 
 		}
 		
 		claims, err := authService.VerifyToken(tokenStr)
 		if err != nil{
-			http.Error(w, "invalid token", http.StatusUnauthorized)
+			http.Error(w, `"error":"invalid token"`, http.StatusUnauthorized)
 			return 
 		}
 
 		//Get username from token
-		username := (*claims)["username"].(string)
+		username, ok := (*claims)["username"].(string)
+		if !ok {
+			http.Error(w, `{"error":"invalid claims"}`, http.StatusUnauthorized)
+			return
+		}
 
+		//Upgrade to WebSocket
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 		log.Println("Upgrade error:", err)
@@ -72,6 +79,8 @@ func HandleWebsocket(authService *service.AuthService) http.HandlerFunc {
 	}
 	jsonSelf, _ := json.Marshal(selfMsg)
 	mainRoom.SendTo(username, jsonSelf)
+
+	//Message Loop
 	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
@@ -95,13 +104,13 @@ func HandleWebsocket(authService *service.AuthService) http.HandlerFunc {
 		switch incoming.Type {
 		case "join":
 			//Resend ID for this client after join room
-			selfMsg := Message{
-				Type:    "your-id",
-				From:    "server",
-				Message: username,
-			}
-			jsonSelf, _ := json.Marshal(selfMsg)
-			mainRoom.SendTo(username, jsonSelf)
+			// selfMsg := Message{
+			// 	Type:    "your-id",
+			// 	From:    "server",
+			// 	Message: username,
+			// }
+			// jsonSelf, _ := json.Marshal(selfMsg)
+			// mainRoom.SendTo(username, jsonSelf)
 
 			//Notify for users know when someone join
 			notify := Message{

@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Walkie-Talkie Test</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap');
+
+  :root {
+    --bg: #0a0e0a;
+    --panel: #111711;
+    --border: #1f2e1f;
+    --green: #39ff14;
+    --green-dim: #1a7a08;
+    --green-glow: rgba(57,255,20,0.15);
+    --red: #ff3b3b;
+    --yellow: #ffd600;
+    --text: #c8e6c8;
+    --text-dim: #4a6b4a;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Rajdhani', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background-image: 
+      radial-gradient(ellipse at 20% 50%, rgba(57,255,20,0.04) 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 20%, rgba(57,255,20,0.03) 0%, transparent 50%);
+  }
+
+  .container {
+    width: 100%;
+    max-width: 480px;
+  }
+
+  /* Header */
+  .header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+  .header h1 {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 22px;
+    color: var(--green);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    text-shadow: 0 0 20px var(--green);
+  }
+  .header p {
+    font-size: 13px;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+    margin-top: 4px;
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  /* Panel */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 20px;
+    margin-bottom: 16px;
+    position: relative;
+  }
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--green-dim), transparent);
+  }
+
+  .panel-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+
+  /* Connection row */
+  .conn-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .conn-row input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 10px 14px;
+    color: var(--green);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .conn-row input:focus {
+    border-color: var(--green-dim);
+    box-shadow: 0 0 10px var(--green-glow);
+  }
+  .conn-row input::placeholder { color: var(--text-dim); }
+
+  /* Buttons */
+  .btn {
+    background: transparent;
+    border: 1px solid var(--green-dim);
+    color: var(--green);
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 2px;
+    padding: 10px 20px;
+    border-radius: 3px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .btn:hover {
+    background: var(--green-glow);
+    border-color: var(--green);
+    box-shadow: 0 0 15px var(--green-glow);
+  }
+  .btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+  .btn.danger {
+    border-color: #7a1a1a;
+    color: var(--red);
+  }
+  .btn.danger:hover {
+    background: rgba(255,59,59,0.1);
+    border-color: var(--red);
+  }
+
+  /* Status indicator */
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    flex-shrink: 0;
+    transition: all 0.3s;
+  }
+  .dot.connected {
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 2s infinite;
+  }
+  .dot.error { background: var(--red); box-shadow: 0 0 8px var(--red); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  .status-text {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .status-text.connected { color: var(--green); }
+  .status-text.error { color: var(--red); }
+
+  /* My ID */
+  .my-id {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    color: var(--yellow);
+    margin-top: 10px;
+    display: none;
+  }
+
+  /* Users list */
+  .users-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 40px;
+  }
+  .user-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    transition: all 0.2s;
+  }
+  .user-item.calling {
+    border-color: var(--green-dim);
+    box-shadow: 0 0 10px var(--green-glow);
+  }
+  .user-name {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .user-actions { display: flex; gap: 8px; }
+  .btn-sm {
+    background: transparent;
+    border: 1px solid var(--green-dim);
+    color: var(--green);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    padding: 5px 12px;
+    border-radius: 2px;
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+  }
+  .btn-sm:hover {
+    background: var(--green-glow);
+    border-color: var(--green);
+  }
+  .btn-sm.end {
+    border-color: #7a1a1a;
+    color: var(--red);
+  }
+  .btn-sm.end:hover {
+    background: rgba(255,59,59,0.1);
+    border-color: var(--red);
+  }
+  .no-users {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+    text-align: center;
+    padding: 12px;
+  }
+
+  /* PTT Button */
+  .ptt-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  .ptt-btn {
+    width: 120px; height: 120px;
+    border-radius: 50%;
+    border: 2px solid var(--green-dim);
+    background: var(--bg);
+    color: var(--green);
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 2px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.15s;
+    position: relative;
+    outline: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .ptt-btn::before {
+    content: '';
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+  }
+  .ptt-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+  .ptt-btn.talking {
+    border-color: var(--green);
+    background: var(--green-glow);
+    box-shadow: 0 0 30px var(--green-glow), 0 0 60px rgba(57,255,20,0.08);
+    transform: scale(1.05);
+  }
+  .ptt-btn.talking::before {
+    border-color: var(--green-dim);
+    animation: ripple 1s infinite;
+  }
+  @keyframes ripple {
+    0% { transform: scale(1); opacity: 0.6; }
+    100% { transform: scale(1.3); opacity: 0; }
+  }
+  .ptt-icon { font-size: 28px; line-height: 1; }
+  .ptt-label { font-size: 11px; letter-spacing: 3px; }
+
+  .ptt-hint {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+  }
+
+  /* Call status */
+  .call-status {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+    text-align: center;
+    letter-spacing: 1px;
+    min-height: 18px;
+  }
+  .call-status.active { color: var(--green); }
+  .call-status.incoming { color: var(--yellow); animation: blink 0.8s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* Log */
+  .log-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 12px;
+    height: 120px;
+    overflow-y: auto;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    line-height: 1.8;
+  }
+  .log-box::-webkit-scrollbar { width: 4px; }
+  .log-box::-webkit-scrollbar-track { background: var(--bg); }
+  .log-box::-webkit-scrollbar-thumb { background: var(--border); }
+  .log-entry { color: var(--text-dim); }
+  .log-entry.info { color: var(--green); }
+  .log-entry.warn { color: var(--yellow); }
+  .log-entry.err { color: var(--red); }
+
+  /* Incoming call overlay */
+  .incoming-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .incoming-overlay.show { display: flex; }
+  .incoming-title {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 14px;
+    color: var(--yellow);
+    letter-spacing: 3px;
+    animation: blink 0.8s infinite;
+  }
+  .incoming-from {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .incoming-actions { display: flex; gap: 20px; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <h1>◈ Walkie-Talkie</h1>
+    <p>WEBRTC TEST CLIENT</p>
+  </div>
+
+  <!-- Connection Panel -->
+  <div class="panel">
+    <div class="panel-label">// Connection</div>
+    <div class="conn-row">
+      <input type="text" id="wsUrl" value="ws://localhost:8080/ws" placeholder="ws://...">
+      <button class="btn" id="btnConnect" onclick="connect()">Connect</button>
+      <button class="btn danger" id="btnDisconnect" onclick="disconnect()" disabled>End</button>
+    </div>
+    <div class="status-row">
+      <div class="dot" id="statusDot"></div>
+      <span class="status-text" id="statusText">OFFLINE</span>
+    </div>
+    <div class="my-id" id="myIdLabel"></div>
+  </div>
+
+  <!-- Users Panel -->
+  <div class="panel">
+    <div class="panel-label">// Online Users</div>
+    <div class="users-list" id="usersList">
+      <div class="no-users">— no users online —</div>
+    </div>
+  </div>
+
+  <!-- PTT Panel -->
+  <div class="panel">
+    <div class="panel-label">// Push To Talk</div>
+    <div class="ptt-wrap">
+      <div class="call-status" id="callStatus">—</div>
+      <button class="ptt-btn" id="pttBtn" disabled
+        onmousedown="startTalk()" onmouseup="stopTalk()"
+        ontouchstart="startTalk(event)" ontouchend="stopTalk()">
+        <span class="ptt-icon">🎙</span>
+        <span class="ptt-label">PUSH</span>
+      </button>
+      <div class="ptt-hint">HOLD TO TALK</div>
+    </div>
+  </div>
+
+  <!-- Log Panel -->
+  <div class="panel">
+    <div class="panel-label">// System Log</div>
+    <div class="log-box" id="logBox"></div>
+  </div>
+</div>
+
+<!-- Incoming Call Overlay -->
+<div class="incoming-overlay" id="incomingOverlay">
+  <div class="incoming-title">▶ INCOMING CALL</div>
+  <div class="incoming-from" id="incomingFrom">—</div>
+  <div class="incoming-actions">
+    <button class="btn" onclick="acceptCall()">Accept</button>
+    <button class="btn danger" onclick="rejectCall()">Reject</button>
+  </div>
+</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────
+let ws = null;
+let myID = null;
+let onlineUsers = {}; // id -> true
+let peerConnections = {}; // targetID -> RTCPeerConnection
+let localStream = null;
+let currentCallTarget = null;
+let pendingOffer = null; // { from, offer }
+
+const ICE_SERVERS = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+// ─── Logging ─────────────────────────────────────────────
+function log(msg, type = '') {
+  const box = document.getElementById('logBox');
+  const div = document.createElement('div');
+  div.className = 'log-entry ' + type;
+  const time = new Date().toLocaleTimeString('vi', { hour12: false });
+  div.textContent = `[${time}] ${msg}`;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+// ─── WebSocket ────────────────────────────────────────────
+function connect() {
+  const url = document.getElementById('wsUrl').value.trim();
+  if (!url) return;
+
+  const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NzU3MzgyNjksInVzZXJfaWQiOiI2OWNlMGU0ZWI2MTExZjdjOGM1YjljYTYiLCJ1c2VybmFtZSI6InVzZXJBIn0.pNc5veT0tKGMcEeEFWIiodk7Wlcw9HA5jMuAXGWF2Fs"; // paste token từ login vào đây
+  ws = new WebSocket(url + "?token=" + token);
+
+  ws.onopen = () => {
+    setStatus('connected');
+    document.getElementById('btnConnect').disabled = true;
+    document.getElementById('btnDisconnect').disabled = false;
+    log('Connected to server', 'info');
+    sendWS({ type: 'join' });
+  };
+
+  ws.onclose = () => {
+    setStatus('offline');
+    document.getElementById('btnConnect').disabled = false;
+    document.getElementById('btnDisconnect').disabled = true;
+    document.getElementById('pttBtn').disabled = true;
+    document.getElementById('myIdLabel').style.display = 'none';
+    onlineUsers = {};
+    renderUsers();
+    log('Disconnected', 'warn');
+    myID = null;
+  };
+
+  ws.onerror = () => {
+    setStatus('error');
+    log('Connection error', 'err');
+  };
+
+  ws.onmessage = async (e) => {
+    let msg;
+    try { msg = JSON.parse(e.data); }
+    catch { log('Non-JSON: ' + e.data); return; }
+    await handleMessage(msg);
+  };
+}
+
+function disconnect() {
+  if (ws) ws.close();
+}
+
+function sendWS(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN)
+    ws.send(JSON.stringify(obj));
+}
+
+// ─── Message Handler ──────────────────────────────────────
+async function handleMessage(msg) {
+  switch (msg.type) {
+
+    case 'user-joined':
+      if (msg.from !== myID) {
+        // First join — server assigns our ID as the first user-joined with no prior ID
+        if (!myID) {
+          // We won't know our ID from server currently; derive from counter
+        }
+        onlineUsers[msg.from] = true;
+        renderUsers();
+        log(`${msg.from} joined`, 'info');
+      }
+      break;
+
+    case 'user-left':
+      delete onlineUsers[msg.from];
+      renderUsers();
+      log(`${msg.from} left`, 'warn');
+      break;
+
+    case 'your-id':
+      myID = msg.message;
+      const label = document.getElementById('myIdLabel');
+      label.textContent = '▸ YOUR ID: ' + myID;
+      label.style.display = 'block';
+      document.getElementById('pttBtn').disabled = false;
+      log('My ID: ' + myID, 'info');
+      break;
+
+    case 'offer':
+      log(`Incoming offer from ${msg.from}`, 'warn');
+      pendingOffer = { from: msg.from, offer: msg.message };
+      showIncoming(msg.from);
+      break;
+
+    case 'answer':
+      log(`Got answer from ${msg.from}`);
+      if (peerConnections[msg.from]) {
+        await peerConnections[msg.from].setRemoteDescription(
+          new RTCSessionDescription(JSON.parse(msg.message))
+        );
+      }
+      break;
+
+    case 'ice-candidate':
+      if (peerConnections[msg.from]) {
+        try {
+          await peerConnections[msg.from].addIceCandidate(
+            new RTCIceCandidate(JSON.parse(msg.message))
+          );
+        } catch(e) { log('ICE error: ' + e.message, 'err'); }
+      }
+      break;
+
+    case 'chat':
+      log(`[${msg.from}]: ${msg.message}`);
+      break;
+
+    default:
+      log(`Unknown type: ${msg.type}`, 'warn');
+  }
+}
+
+// ─── Users UI ─────────────────────────────────────────────
+function renderUsers() {
+  const list = document.getElementById('usersList');
+  const ids = Object.keys(onlineUsers).filter(id => id !== myID);
+  if (ids.length === 0) {
+    list.innerHTML = '<div class="no-users">— no users online —</div>';
+    return;
+  }
+  list.innerHTML = ids.map(id => `
+    <div class="user-item" id="user-${id.replace(' ','-')}">
+      <span class="user-name">◈ ${id}</span>
+      <div class="user-actions">
+        <button class="btn-sm" onclick="callUser('${id}')">Call</button>
+        <button class="btn-sm end" onclick="endCall('${id}')">End</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ─── WebRTC ───────────────────────────────────────────────
+function createPC(targetID) {
+  const pc = new RTCPeerConnection(ICE_SERVERS);
+
+  pc.onicecandidate = (e) => {
+    if (e.candidate) {
+      sendWS({ type: 'ice-candidate', to: targetID, message: JSON.stringify(e.candidate) });
+    }
+  };
+
+  pc.ontrack = (e) => {
+    log(`Audio stream from ${targetID}`, 'info');
+    let audio = document.getElementById('audio-' + targetID.replace(' ', '-'));
+    if (!audio) {
+      audio = document.createElement('audio');
+      audio.id = 'audio-' + targetID.replace(' ', '-');
+      audio.autoplay = true;
+      document.body.appendChild(audio);
+    }
+    audio.srcObject = e.streams[0];
+  };
+
+  pc.onconnectionstatechange = () => {
+    log(`[${targetID}] PC state: ${pc.connectionState}`);
+    if (pc.connectionState === 'connected') {
+      setCallStatus(`🟢 Connected with ${targetID}`, 'active');
+    } else if (['disconnected','failed','closed'].includes(pc.connectionState)) {
+      setCallStatus('—');
+    }
+  };
+
+  peerConnections[targetID] = pc;
+  return pc;
+}
+
+async function getLocalStream() {
+  if (localStream) return localStream;
+  localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+  log('Microphone access granted', 'info');
+  return localStream;
+}
+
+async function callUser(targetID) {
+  if (!myID) { log('Not connected', 'err'); return; }
+  log(`Calling ${targetID}...`);
+  currentCallTarget = targetID;
+  setCallStatus(`Calling ${targetID}...`);
+
+  const stream = await getLocalStream();
+  const pc = createPC(targetID);
+  stream.getTracks().forEach(t => pc.addTrack(t, stream));
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  sendWS({ type: 'offer', to: targetID, message: JSON.stringify(offer) });
+}
+
+async function acceptCall() {
+  hideIncoming();
+  if (!pendingOffer) return;
+  const { from, offer } = pendingOffer;
+  pendingOffer = null;
+  currentCallTarget = from;
+  log(`Accepting call from ${from}`, 'info');
+  setCallStatus(`Connected with ${from}`, 'active');
+
+  const stream = await getLocalStream();
+  const pc = createPC(from);
+  stream.getTracks().forEach(t => pc.addTrack(t, stream));
+
+  await pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(offer)));
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  sendWS({ type: 'answer', to: from, message: JSON.stringify(answer) });
+}
+
+function rejectCall() {
+  hideIncoming();
+  pendingOffer = null;
+  log('Call rejected', 'warn');
+}
+
+function endCall(targetID) {
+  if (peerConnections[targetID]) {
+    peerConnections[targetID].close();
+    delete peerConnections[targetID];
+  }
+  if (currentCallTarget === targetID) {
+    currentCallTarget = null;
+    setCallStatus('—');
+  }
+  log(`Ended call with ${targetID}`, 'warn');
+}
+
+// ─── PTT ─────────────────────────────────────────────────
+function startTalk(e) {
+  if (e) e.preventDefault();
+  if (!currentCallTarget) { log('No active call. Call a user first.', 'warn'); return; }
+  const btn = document.getElementById('pttBtn');
+  btn.classList.add('talking');
+  // unmute all tracks
+  if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = true);
+  log('PTT: Transmitting...', 'info');
+}
+
+function stopTalk() {
+  const btn = document.getElementById('pttBtn');
+  btn.classList.remove('talking');
+  // mute tracks when not pressing
+  if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = false);
+  log('PTT: Released');
+}
+
+// ─── UI Helpers ───────────────────────────────────────────
+function setStatus(s) {
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  dot.className = 'dot ' + (s === 'connected' ? 'connected' : s === 'error' ? 'error' : '');
+  txt.className = 'status-text ' + (s === 'connected' ? 'connected' : s === 'error' ? 'error' : '');
+  txt.textContent = s.toUpperCase();
+}
+
+function setCallStatus(msg, cls = '') {
+  const el = document.getElementById('callStatus');
+  el.className = 'call-status ' + cls;
+  el.textContent = msg;
+}
+
+function showIncoming(from) {
+  document.getElementById('incomingFrom').textContent = from;
+  document.getElementById('incomingOverlay').classList.add('show');
+}
+
+function hideIncoming() {
+  document.getElementById('incomingOverlay').classList.remove('show');
+}
+</script>
+</body>
+</html>
