@@ -7,6 +7,7 @@ import (
 
 	"walkie-talkie-app/internal/config"
 	"walkie-talkie-app/internal/handler"
+	"walkie-talkie-app/internal/middleware"
 	"walkie-talkie-app/internal/repository"
 	"walkie-talkie-app/internal/service"
 	"walkie-talkie-app/internal/websocket"
@@ -29,8 +30,16 @@ func main() {
 	// Routes
 	http.HandleFunc("/auth/register", authHandler.Register)
 	http.HandleFunc("/auth/login", authHandler.Login)
-	http.HandleFunc("/ws", websocket.HandleWebsocket)
 
+	//Route have proctect
+	http.HandleFunc("/profile", middleware.AuthMiddleware(authService, func(w http.ResponseWriter, r *http.Request){
+		claims := r.Context().Value(middleware.UserKey)
+		handler.WriteJSON(w, http.StatusOK, claims)
+
+	}))
+
+	//WebSocket claim authService
+	http.HandleFunc("/websocket", websocket.HandleWebsocket(authService))
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"

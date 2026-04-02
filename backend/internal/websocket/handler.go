@@ -2,11 +2,11 @@ package websocket
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
-	"sync/atomic"
+
 	"walkie-talkie-app/internal/room"
+	"walkie-talkie-app/internal/service"
 
 	"github.com/gorilla/websocket"
 )
@@ -29,49 +29,68 @@ type Message struct {
 	Message string `json:"message"`
 }
 
-func HandleWebsocket(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
+func HandleWebsocket(authService *service.AuthService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request){
+		//Get token fron query param: ws//localhost:8080/websocket?token=xxx
+		tokenStr := r.URL.Query().Get("token")
+		if tokenStr == ""{
+			http.Error(w, "missing token", http.StatusUnauthorized)
+			return 
+		}
+		
+		claims, err := authService.VerifyToken(tokenStr)
+		if err != nil{
+			http.Error(w, "invalid token", http.StatusUnauthorized)
+			return 
+		}
+
+		//Get username from token
+		username := (*claims)["username"].(string)
+
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
 		log.Println("Upgrade error:", err)
 		return
 	}
-
-	//Create Client, avoid 2 user have duplicate ID
-	id := fmt.Sprintf("user %d", atomic.AddInt64(&counterClient, 1))
-
 	client := &room.Client{
-		ID:   id,
+		ID:   username, //use username instead of user1, user2
 		Conn: conn,
 	}
-
 	mainRoom.AddClient(client)
-
-	log.Printf("[CONNECT] %s\n", id)
-
+	log.Printf("[CONNECT] %s\n", username)
 	defer func() {
 		mainRoom.RemoveClient(client)
 		conn.Close()
-		log.Printf("[DISCONNECT] %s\n", id)
+		log.Printf("[DISCONNECT] %s\n", username)
 	}()
-
+	
+	//Send ID for client
+	selfMsg := Message{
+		Type: "your-id",
+		From: "server",
+		Message: username,
+	}
+	jsonSelf, _ := json.Marshal(selfMsg)
+	mainRoom.SendTo(username, jsonSelf)
 	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
 			log.Println("Read error:", err)
 			break
 		}
+		
 		var incoming Message
 		if err := json.Unmarshal(msg, &incoming); err != nil {
 			incoming = Message{
 				Type:    "chat",
-				From:    id,
+				From:    username,
 				Message: string(msg),
 			}
 		} else {
-			incoming.From = id
+			incoming.From = username
 		}
 
-		log.Printf("[RECV] %s | type=%s | to=%s | message=%s\n", id, incoming.Type, incoming.To, incoming.Message)
+		log.Printf("[RECV] %s | type=%s | to=%s | message=%s\n", username, incoming.Type, incoming.To, incoming.Message)
 
 		switch incoming.Type {
 		case "join":
@@ -79,16 +98,16 @@ func HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 			selfMsg := Message{
 				Type:    "your-id",
 				From:    "server",
-				Message: id,
+				Message: username,
 			}
 			jsonSelf, _ := json.Marshal(selfMsg)
-			mainRoom.SendTo(id, jsonSelf)
+			mainRoom.SendTo(username, jsonSelf)
 
 			//Notify for users know when someone join
 			notify := Message{
 				Type:    "user-joined",
-				From:    id,
-				Message: id + "entered the room",
+				From:    username,
+				Message: username + "entered the room",
 			}
 			jsonMsg, _ := json.Marshal(notify)
 			mainRoom.Broadcast(client, jsonMsg) //send to everyone (-client sending)
@@ -110,6 +129,8 @@ func HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 		default:
 			log.Printf("[WARN]Unknown type: %s\n", incoming.Type)
 		}
+	}
+
 
 	}
 }
