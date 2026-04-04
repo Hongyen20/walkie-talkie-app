@@ -11,6 +11,8 @@ import (
 type Client struct{
 	ID string 
 	Conn *websocket.Conn
+	RoomID string
+	ChannelID string
 }
 
 type Room struct{
@@ -41,20 +43,23 @@ func (r *Room) RemoveClient(c *Client){
 	log.Printf("[ROOM %s] REMOVE %s\n", r.Name, c.ID)
 }
 
-func (r *Room) Broadcast(sender *Client, msg []byte){
+//Broadcast just 1 channel
+func (r *Room) BroadcastToChannel(sender *Client, channelID string, msg []byte){
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
 	var toRemove []*Client
 	for _, client := range r.Clients{
 		if client.ID == sender.ID{
-			continue //not send to this client
+			continue //just send in channel
 		}
 
 
 		err := client.Conn.WriteMessage(websocket.TextMessage, msg)
 		if err != nil{
 			log.Println("[ERROR] Write:" , err)
+			client.Conn.Close()
+
 			toRemove = append(toRemove, client)
 			continue
 		}
@@ -86,4 +91,46 @@ func (r *Room) GetClientIDs() []string{
 		ids = append(ids, client.ID)
 	}
 	return ids
+}
+
+
+//RoomManager
+type RoomManager struct{
+	rooms map[string]*Room //Key: roomID
+	mutex sync.Mutex
+}
+
+func NewRoomManager() *RoomManager{
+	return &RoomManager{
+		rooms: make(map[string]*Room),
+	}
+}
+
+//Get room if u have ID, create a new one if u don't have
+func (m *RoomManager) GetOrCreate(roomID string) *Room{
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	if r, ok := m.rooms[roomID]; ok{
+		return r
+	}
+	r := NewRoom(roomID)
+	m.rooms[roomID] = r
+	log.Printf("[MANAGER] Created room %s/n", roomID)
+	return r
+}
+
+//Delete room if noone in room
+func (m *RoomManager) CleanIfEmpty(roomID string){
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if r, ok := m.rooms[roomID]; ok{
+		r.mutex.Lock()
+		count := len(r.Clients)
+		r.mutex.Unlock()
+		if count == 0{
+			delete(m.rooms, roomID)
+			log.Printf("[MANAGER] Removed empty room &s\n", roomID)
+		}
+	}
 }

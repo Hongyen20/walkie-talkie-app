@@ -54,7 +54,7 @@ func main() {
 
 	}))
 	//WebSocket claim authService
-	http.HandleFunc("/websocket", websocket.HandleWebsocket(authService))
+	http.HandleFunc("/websocket", websocket.HandleWebsocket(authService, roomRepo, channelRepo))
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"

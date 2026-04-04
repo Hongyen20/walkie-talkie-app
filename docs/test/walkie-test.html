@@ -467,7 +467,7 @@ function connect() {
   if (!url) return;
 
   const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NzU3MzgyNjksInVzZXJfaWQiOiI2OWNlMGU0ZWI2MTExZjdjOGM1YjljYTYiLCJ1c2VybmFtZSI6InVzZXJBIn0.pNc5veT0tKGMcEeEFWIiodk7Wlcw9HA5jMuAXGWF2Fs"; // paste token từ login vào đây
-  ws = new WebSocket(url + "?token=" + token);
+  ws = new WebSocket(url);
 
   ws.onopen = () => {
     setStatus('connected');
