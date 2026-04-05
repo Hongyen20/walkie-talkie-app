@@ -23,38 +23,45 @@ class AuthService {
     await prefs.remove('token');
   }
 
-  //Register
-  Future<Map<String, dynamic>> register(
-    String username,
-    String password,
-    String displayName,
-  ) async {
-    final res = await http.post(
-      Uri.parse('${Constants.baseUrl}/auth/register'),
-      headers: {'COntent-Type': 'application/json'},
-      body: jsonEncode({
-        'username': username,
-        'password': password,
-        'display_name': displayName,
-      }),
-    );
-
-    return jsonDecode(res.body);
-  }
-
-  //Login
-  Future<User?> login(String username, String password) async {
-    final res = await http.post(
-      Uri.parse('${Constants.baseUrl}/auth/login'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'username': username, 'password': password}),
-    );
-    if (res.statusCode == 200) {
-      final data = jsonDecode(res.body);
-      final user = User.fromJson(data, data['token']);
-      await saveToken(data['token']);
-      return user;
+  Future<Map<String, dynamic>> login(String username, String password) async {
+    if (username.isEmpty) {
+        return {'error': 'Please enter username'};
     }
-    return null;
-  }
+    if (password.isEmpty) {
+        return {'error': 'Please enter password'};
+    }
+
+    final res = await http.post(
+        Uri.parse('${Constants.baseUrl}/auth/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'username': username, 'password': password}),
+    );
+
+    final data = jsonDecode(res.body);
+    if (res.statusCode == 200) {
+        await saveToken(data['token']);
+        return {'user': User.fromJson(data, data['token'])};
+    }
+    return {'error': data['error']};
+}
+
+Future<Map<String, dynamic>> register(String username, String password, String displayName) async {
+    if (username.isEmpty || password.isEmpty || displayName.isEmpty) {
+        return {'error': 'Please fill in all fields'};
+    }
+    if (password.length < 8) {
+        return {'error': 'Password must be at least 8 characters'};
+    }
+
+    final res = await http.post(
+        Uri.parse('${Constants.baseUrl}/auth/register'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+            'username': username,
+            'password': password,
+            'display_name': displayName,
+        }),
+    );
+    return jsonDecode(res.body);
+}
 }

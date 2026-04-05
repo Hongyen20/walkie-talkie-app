@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../models/user.dart';
 import 'register_screen.dart';
 import 'room_list_screen.dart';
 
@@ -23,20 +24,22 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = '';
     });
 
-    final user = await _authService.login(
+    final result = await _authService.login(
       _usernameController.text.trim(),
       _passwordController.text.trim(),
     );
 
     setState(() => _isLoading = false);
 
-    if (user != null) {
+    if (result['user'] != null) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => RoomListScreen(user: user)),
+        MaterialPageRoute(
+          builder: (_) => RoomListScreen(user: result['user'] as User),
+        ),
       );
     } else {
-      setState(() => _error = 'Incorrect username or password!');
+      setState(() => _error = result['error'] ?? 'Login failed');
     }
   }
 

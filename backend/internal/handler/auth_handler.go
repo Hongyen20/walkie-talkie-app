@@ -30,7 +30,10 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Username and password required")
 		return
 	}
-
+	if len(body.Password) < 8 {
+		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "Password must be at least 8 characters"})
+		return
+	}
 	user, err := h.authService.Register(r.Context(), body.Username, body.Password, body.DisplayName)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())

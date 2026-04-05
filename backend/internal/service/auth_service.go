@@ -43,22 +43,22 @@ func (s *AuthService) Register(ctx context.Context, username, password, displayN
 }
 
 // Login
+// Login
 func (s *AuthService) Login(ctx context.Context, username, password string) (string, *model.User, error) {
 	user, err := s.userRepo.FindByUserName(ctx, username)
 	if err != nil {
-		return "", nil, errors.New("Invalid username or password")
+		return "", nil, errors.New("Username not found") 
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-		return "", nil, errors.New("Invalid username or password")
-	}
+    if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+        return "", nil, errors.New("Incorrect password") 
+    }
 
-	token, err := generateJWT(user)
-	if err != nil {
-		return "", nil, err
-	}
-
-	return token, user, nil
+    token, err := generateJWT(user)
+    if err != nil {
+        return "", nil, err
+    }
+    return token, user, nil
 }
 
 // Verify JWT
