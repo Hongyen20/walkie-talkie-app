@@ -32,33 +32,46 @@ func main() {
 	authService := service.NewAuthService(userRepo)
 	authHandler := handler.NewAuthHandler(authService)
 
-	// Routes
-	http.HandleFunc("/auth/register", authHandler.Register)
-	http.HandleFunc("/auth/login", authHandler.Login)
+	mux := http.NewServeMux()
 
-	//Route have proctect
-	http.HandleFunc("/profile", middleware.AuthMiddleware(authService, func(w http.ResponseWriter, r *http.Request) {
-		claims := r.Context().Value(middleware.UserKey)
-		handler.WriteJSON(w, http.StatusOK, claims)
+    mux.HandleFunc("/auth/register", authHandler.Register)
+    mux.HandleFunc("/auth/login", authHandler.Login)
+    mux.HandleFunc("/profile", middleware.AuthMiddleware(authService, func(w http.ResponseWriter, r *http.Request) {
+        claims := r.Context().Value(middleware.UserKey)
+        handler.WriteJSON(w, http.StatusOK, claims)
+    }))
+    mux.HandleFunc("/rooms", middleware.AuthMiddleware(authService, roomHandler.CreateRoom))
+    mux.HandleFunc("/rooms/", middleware.AuthMiddleware(authService, func(w http.ResponseWriter, r *http.Request) {
+        if strings.HasSuffix(r.URL.Path, "/channels") {
+            roomHandler.CreateChannel(w, r)
+        } else if strings.HasSuffix(r.URL.Path, "/members") {
+            roomHandler.AddMember(w, r)
+        }
+    }))
+    mux.HandleFunc("/websocket", websocket.HandleWebsocket(authService, roomRepo, channelRepo))
 
-	}))
+    port := os.Getenv("PORT")
+    if port == "" {
+        port = "8080"
+    }
 
-	//Routes Room
-	http.HandleFunc("/rooms", middleware.AuthMiddleware(authService, roomHandler.CreateRoom))
-	http.HandleFunc("/rooms/", middleware.AuthMiddleware(authService, func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/channels") {
-			roomHandler.CreateChannel(w, r)
-		} else if strings.HasSuffix(r.URL.Path, "/members") {
-			roomHandler.AddMember(w, r)
-		}
+    // Wrap mux với CORS
+    log.Println("[SERVER] Running on :" + port)
+    log.Fatal(http.ListenAndServe(":"+port, corsMiddleware(mux)))
 
-	}))
-	//WebSocket claim authService
-	http.HandleFunc("/websocket", websocket.HandleWebsocket(authService, roomRepo, channelRepo))
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-	log.Println("[SERVER] Running on :" + port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Access-Control-Allow-Origin", "*")
+        w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+        // Handle preflight request
+        if r.Method == "OPTIONS" {
+            w.WriteHeader(http.StatusOK)
+            return
+        }
+        next.ServeHTTP(w, r)
+    })
 }
