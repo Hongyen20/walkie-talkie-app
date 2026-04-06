@@ -52,18 +52,18 @@ func (r *RoomRepository) FindByID(ctx context.Context, id primitive.ObjectID) (*
 
 // Get allroom of 1 user
 func (r *RoomRepository) FindByOwner(ctx context.Context, ownerID primitive.ObjectID) ([]model.Room, error) {
-    cursor, err := r.rooms.Find(ctx, bson.M{"owner_id": ownerID})
-    if err != nil {
-        return []model.Room{}, nil // return to null array
-    }
-    var rooms []model.Room
-    if err := cursor.All(ctx, &rooms); err != nil {
-        return []model.Room{}, nil
-    }
-    if rooms == nil {
-        return []model.Room{}, nil // not return nil
-    }
-    return rooms, nil
+	cursor, err := r.rooms.Find(ctx, bson.M{"owner_id": ownerID})
+	if err != nil {
+		return []model.Room{}, nil // return to null array
+	}
+	var rooms []model.Room
+	if err := cursor.All(ctx, &rooms); err != nil {
+		return []model.Room{}, nil
+	}
+	if rooms == nil {
+		return []model.Room{}, nil // not return nil
+	}
+	return rooms, nil
 }
 
 // Add member to room
@@ -115,3 +115,46 @@ func (r *RoomRepository) GetMemberRole(ctx context.Context, roomID, userID primi
 	}
 	return member.Role, nil
 }
+
+// Find room by invite code
+func (r *RoomRepository) FindByInviteCode(ctx context.Context, code string) (*model.Room, error) {
+	var room model.Room
+	err := r.rooms.FindOne(ctx, bson.M{"invite_code": code}).Decode(&room)
+	if err != nil {
+		return nil, err
+	}
+	return &room, nil
+}
+
+// Get all room when user join
+func (r *RoomRepository) FindByMember(ctx context.Context, userID primitive.ObjectID) ([]model.Room, error) {
+	//Find all room_members of user
+	cursor, err := r.members.Find(ctx, bson.M{"user_id": userID})
+	if err != nil {
+		return []model.Room{}, nil
+	}
+	var members []model.RoomMember
+	cursor.All(ctx, &members)
+
+	//Get room_id from members
+	roomIDs := make([]primitive.ObjectID, 0)
+	for _, m := range members{
+		roomIDs = append(roomIDs, m.RoomID)
+	}
+	if len(roomIDs) == 0{
+		return []model.Room{}, nil
+	}
+
+	//Find all rooms by room_id
+	cursor2 , err := r.rooms.Find(ctx, bson.M{"_id": bson.M{"$in": roomIDs}})
+	if err != nil{
+		return []model.Room{}, nil
+	}
+	var rooms []model.Room
+	cursor2.All(ctx, &rooms)
+	if rooms == nil{
+		return []model.Room{}, nil
+	}
+	return rooms, nil
+}
+

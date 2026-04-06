@@ -119,16 +119,36 @@ func (h *RoomHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 
 //GET /rooms
 func (h *RoomHandler) GetRooms(w http.ResponseWriter, r *http.Request){
-	ownerID, err := getUserID(r)
+	userID, err := getUserID(r)
 	if err != nil{
 		WriteJSON(w, http.StatusUnauthorized, map[string]string{"error":"unauthorized"})
 		return
 	}
-	rooms, err := h.roomService.GetRoomsByOwner(r.Context(), ownerID)
+	rooms, err := h.roomService.GetRoomsByUser(r.Context(), userID)
 	if err != nil {
 		WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	WriteJSON(w, http.StatusOK, rooms)
 }
-
+//POST /rooms/join
+func (h *RoomHandler) JoinRoom(w http.ResponseWriter, r *http.Request){
+	userID, err := getUserID(r)
+	if err != nil{
+		WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	var body struct{
+		InviteCode string `json:"invite_code"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.InviteCode == ""{
+		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "Invite_code is required"})
+		return
+	}
+	room, err := h.roomService.JoinByInviteCode(r.Context(), userID, body.InviteCode)
+	if err != nil{
+		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	WriteJSON(w, http.StatusOK, room)
+}

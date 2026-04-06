@@ -101,3 +101,32 @@ func (s *RoomService) GetChannels(ctx context.Context, roomID primitive.ObjectID
 func (s *RoomService) GetRoomsByOwner(ctx context.Context, ownerID primitive.ObjectID) ([]model.Room, error) {
     return s.roomRepo.FindByOwner(ctx, ownerID)
 }
+
+// Get all room, user had join
+func (s *RoomService) GetRoomsByUser(ctx context.Context, userID primitive.ObjectID) ([]model.Room, error) {
+    return s.roomRepo.FindByMember(ctx, userID)
+}
+
+func (s *RoomService) JoinByInviteCode(ctx context.Context, userID primitive.ObjectID, code string) (*model.Room, error){
+	//Find room by invite code
+	room, err := s.roomRepo.FindByInviteCode(ctx, code)
+	if err != nil{
+		return nil, errors.New("Invalid invite code")
+	}
+
+	//Check user had join room???
+	if s.roomRepo.IsMember(ctx, room.ID, userID){
+		return nil, errors.New("You're already in this room.")
+	}
+
+	//Add user into room
+	member := &model.RoomMember{
+		RoomID: room.ID,
+		UserID: userID,
+		Role: "member",
+	}
+	if err := s.roomRepo.AddMember(ctx, member); err != nil {
+		return nil, err
+	}
+	return room, nil
+}

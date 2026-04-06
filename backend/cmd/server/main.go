@@ -57,6 +57,9 @@ func main() {
 			roomHandler.CreateRoom(w, r)
 		}
 	}))
+	
+	//Join room
+	mux.HandleFunc("/rooms/join", middleware.AuthMiddleware(authService, roomHandler.JoinRoom))
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"

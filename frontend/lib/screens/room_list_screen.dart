@@ -80,6 +80,75 @@ class _RoomListScreenState extends State<RoomListScreen> {
     );
   }
 
+  Future<void> _joinRoom() async {
+    final codeController = TextEditingController();
+    String? errorMsg;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStateDialog) => AlertDialog(
+          backgroundColor: const Color(0xFF111711),
+          title: const Text(
+            'Join Room',
+            style: TextStyle(color: Color(0xFF39FF14)),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: codeController,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: 'Invite Code',
+                  labelStyle: TextStyle(color: Color(0xFF39FF14)),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Color(0xFF1f2e1f)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Color(0xFF39FF14)),
+                  ),
+                ),
+              ),
+              if (errorMsg != null) ...[
+                const SizedBox(height: 8),
+                Text(errorMsg!, style: const TextStyle(color: Colors.red)),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel', style: TextStyle(color: Colors.red)),
+            ),
+            TextButton(
+              onPressed: () async {
+                if (codeController.text.trim().isEmpty) return;
+                final result = await _roomService.joinRoom(
+                  widget.user.token,
+                  codeController.text.trim(),
+                );
+                if (result['room'] != null) {
+                  Navigator.pop(ctx);
+                  _loadRooms();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Joined room successfully!')),
+                  );
+                } else {
+                  setStateDialog(() => errorMsg = result['error']);
+                }
+              },
+              child: const Text(
+                'Join',
+                style: TextStyle(color: Color(0xFF39FF14)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -91,6 +160,11 @@ class _RoomListScreenState extends State<RoomListScreen> {
           style: const TextStyle(color: Color(0xFF39FF14)),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.login, color: Color(0xFF39FF14)),
+            tooltip: 'Join Room',
+            onPressed: _joinRoom,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Color(0xFF39FF14)),
             onPressed: _loadRooms,
