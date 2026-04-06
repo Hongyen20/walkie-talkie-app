@@ -115,3 +115,20 @@ func (h *RoomHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 	}
 	WriteJSON(w, http.StatusOK, map[string]string{"message": "member added"})
 }
+
+
+//GET /rooms
+func (h *RoomHandler) GetRooms(w http.ResponseWriter, r *http.Request){
+	ownerID, err := getUserID(r)
+	if err != nil{
+		WriteJSON(w, http.StatusUnauthorized, map[string]string{"error":"unauthorized"})
+		return
+	}
+	rooms, err := h.roomService.GetRoomsByOwner(r.Context(), ownerID)
+	if err != nil {
+		WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	WriteJSON(w, http.StatusOK, rooms)
+}
+

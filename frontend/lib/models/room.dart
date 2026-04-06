@@ -14,11 +14,11 @@ class Room {
   });
   factory Room.fromJson(Map<String, dynamic> json) {
     return Room(
-      id: json['id'] ?? '',
-      name: json['name'] ?? '',
-      ownerID: json['owner_id'] ?? '',
-      inviteCode: json['invite_code'] ?? '',
-      isActive: json['is_active'] ?? false,
+      id: json['ID'] ?? json['id'] ?? '',
+        name: json['Name'] ?? json['name'] ?? '',
+        ownerID: json['OwnerID'] ?? json['owner_id'] ?? '',
+        inviteCode: json['InvitedCode'] ?? json['invite_code'] ?? '',
+        isActive: json['IsActive'] ?? json['is_active'] ?? false,
     );
   }
 }

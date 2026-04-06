@@ -97,3 +97,7 @@ func (s *RoomService) SetChannelLocked(ctx context.Context, roomID, ownerID, cha
 func (s *RoomService) GetChannels(ctx context.Context, roomID primitive.ObjectID) ([]model.Channel, error) {
 	return s.channelRepo.FindByRoom(ctx, roomID)
 }
+
+func (s *RoomService) GetRoomsByOwner(ctx context.Context, ownerID primitive.ObjectID) ([]model.Room, error) {
+    return s.roomRepo.FindByOwner(ctx, ownerID)
+}

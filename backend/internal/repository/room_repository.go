@@ -52,15 +52,18 @@ func (r *RoomRepository) FindByID(ctx context.Context, id primitive.ObjectID) (*
 
 // Get allroom of 1 user
 func (r *RoomRepository) FindByOwner(ctx context.Context, ownerID primitive.ObjectID) ([]model.Room, error) {
-	cursor, err := r.rooms.Find(ctx, bson.M{"owner.id": ownerID})
-	if err != nil {
-		return nil, err
-	}
-	var rooms []model.Room
-	if err := cursor.All(ctx, &rooms); err != nil {
-		return nil, err
-	}
-	return rooms, nil
+    cursor, err := r.rooms.Find(ctx, bson.M{"owner_id": ownerID})
+    if err != nil {
+        return []model.Room{}, nil // return to null array
+    }
+    var rooms []model.Room
+    if err := cursor.All(ctx, &rooms); err != nil {
+        return []model.Room{}, nil
+    }
+    if rooms == nil {
+        return []model.Room{}, nil // not return nil
+    }
+    return rooms, nil
 }
 
 // Add member to room

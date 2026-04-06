@@ -17,7 +17,7 @@ type AuthService struct {
 	userRepo *repository.UserRepository
 }
 
-func NewAuthService(userRepo *repository.UserRepository) *AuthService{
+func NewAuthService(userRepo *repository.UserRepository) *AuthService {
 	return &AuthService{userRepo: userRepo}
 }
 
@@ -42,23 +42,23 @@ func (s *AuthService) Register(ctx context.Context, username, password, displayN
 	return user, nil
 }
 
-// Login
+
 // Login
 func (s *AuthService) Login(ctx context.Context, username, password string) (string, *model.User, error) {
 	user, err := s.userRepo.FindByUserName(ctx, username)
 	if err != nil {
-		return "", nil, errors.New("Username not found") 
+		return "", nil, errors.New("Username not found")
 	}
 
-    if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-        return "", nil, errors.New("Incorrect password") 
-    }
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+		return "", nil, errors.New("Incorrect password")
+	}
 
-    token, err := generateJWT(user)
-    if err != nil {
-        return "", nil, err
-    }
-    return token, user, nil
+	token, err := generateJWT(user)
+	if err != nil {
+		return "", nil, err
+	}
+	return token, user, nil
 }
 
 // Verify JWT
@@ -95,4 +95,8 @@ func generateInviteCode() string {
 		code[i] = chars[r.Intn(len(chars))]
 	}
 	return string(code)
+}
+
+func (s *AuthService) FindByUserName(ctx context.Context, username string) (*model.User, error) {
+	return s.userRepo.FindByUserName(ctx, username)
 }

@@ -77,6 +77,7 @@ class _LoginScreenState extends State<LoginScreen> {
               obscureText: true,
               style: const TextStyle(color: Colors.white),
               decoration: _inputDecoration('Password'),
+              onSubmitted: (_) => _login(),
             ),
             const SizedBox(height: 24),
 

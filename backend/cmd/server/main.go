@@ -34,44 +34,51 @@ func main() {
 
 	mux := http.NewServeMux()
 
-    mux.HandleFunc("/auth/register", authHandler.Register)
-    mux.HandleFunc("/auth/login", authHandler.Login)
-    mux.HandleFunc("/profile", middleware.AuthMiddleware(authService, func(w http.ResponseWriter, r *http.Request) {
-        claims := r.Context().Value(middleware.UserKey)
-        handler.WriteJSON(w, http.StatusOK, claims)
-    }))
-    mux.HandleFunc("/rooms", middleware.AuthMiddleware(authService, roomHandler.CreateRoom))
-    mux.HandleFunc("/rooms/", middleware.AuthMiddleware(authService, func(w http.ResponseWriter, r *http.Request) {
-        if strings.HasSuffix(r.URL.Path, "/channels") {
-            roomHandler.CreateChannel(w, r)
-        } else if strings.HasSuffix(r.URL.Path, "/members") {
-            roomHandler.AddMember(w, r)
-        }
-    }))
-    mux.HandleFunc("/websocket", websocket.HandleWebsocket(authService, roomRepo, channelRepo))
+	mux.HandleFunc("/auth/register", authHandler.Register)
+	mux.HandleFunc("/auth/login", authHandler.Login)
+	mux.HandleFunc("/profile", middleware.AuthMiddleware(authService, func(w http.ResponseWriter, r *http.Request) {
+		claims := r.Context().Value(middleware.UserKey)
+		handler.WriteJSON(w, http.StatusOK, claims)
+	}))
+	mux.HandleFunc("/rooms/", middleware.AuthMiddleware(authService, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/channels") {
+			roomHandler.CreateChannel(w, r)
+		} else if strings.HasSuffix(r.URL.Path, "/members") {
+			roomHandler.AddMember(w, r)
+		}
+	}))
 
-    port := os.Getenv("PORT")
-    if port == "" {
-        port = "8080"
-    }
+	mux.HandleFunc("/websocket", websocket.HandleWebsocket(authService, roomRepo, channelRepo))
+	//ADD GET /rooms
+	mux.HandleFunc("/rooms", middleware.AuthMiddleware(authService, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			roomHandler.GetRooms(w, r)
+		} else if r.Method == "POST" {
+			roomHandler.CreateRoom(w, r)
+		}
+	}))
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
 
-    // Wrap mux với CORS
-    log.Println("[SERVER] Running on :" + port)
-    log.Fatal(http.ListenAndServe(":"+port, corsMiddleware(mux)))
+	// Wrap mux với CORS
+	log.Println("[SERVER] Running on :" + port)
+	log.Fatal(http.ListenAndServe(":"+port, corsMiddleware(mux)))
 
 }
 
 func corsMiddleware(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        w.Header().Set("Access-Control-Allow-Origin", "*")
-        w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
-        // Handle preflight request
-        if r.Method == "OPTIONS" {
-            w.WriteHeader(http.StatusOK)
-            return
-        }
-        next.ServeHTTP(w, r)
-    })
+		// Handle preflight request
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

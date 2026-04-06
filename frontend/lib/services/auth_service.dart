@@ -46,13 +46,6 @@ class AuthService {
 }
 
 Future<Map<String, dynamic>> register(String username, String password, String displayName) async {
-    if (username.isEmpty || password.isEmpty || displayName.isEmpty) {
-        return {'error': 'Please fill in all fields'};
-    }
-    if (password.length < 8) {
-        return {'error': 'Password must be at least 8 characters'};
-    }
-
     final res = await http.post(
         Uri.parse('${Constants.baseUrl}/auth/register'),
         headers: {'Content-Type': 'application/json'},

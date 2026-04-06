@@ -31,7 +31,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = false);
 
     if (result['message'] == 'Register successful') {
-      Navigator.pop(context); // quay lại Login
+      Navigator.pop(context); // Goback Login
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Registration successful! Please log in.')),
       );
@@ -71,6 +71,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               obscureText: true,
               style: const TextStyle(color: Colors.white),
               decoration: _inputDecoration('Password'),
+              onSubmitted: (_) => _register(),
             ),
             const SizedBox(height: 24),
 
