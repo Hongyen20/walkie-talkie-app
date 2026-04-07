@@ -32,3 +32,14 @@ type RoomMember struct{
 	Role		string				`bson:"role"			json:"role"`  //Owner || member
 	JoinedAt	time.Time			`bson:"joined_at"		json:"joined_at"`
 }
+
+
+type RoomWithRole struct {
+    ID         primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+    Name       string             `bson:"name"          json:"name"`
+    OwnerID    primitive.ObjectID `bson:"owner_id"      json:"owner_id"`
+    InviteCode string             `bson:"invite_code"   json:"invite_code"`
+    IsActive   bool               `bson:"is_active"     json:"is_active"`
+    CreatedAt  time.Time          `bson:"created_at"    json:"created_at"`
+    Role       string             `bson:"-"             json:"role"` // owner | member
+}

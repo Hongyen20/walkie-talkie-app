@@ -103,7 +103,7 @@ func (s *RoomService) GetRoomsByOwner(ctx context.Context, ownerID primitive.Obj
 }
 
 // Get all room, user had join
-func (s *RoomService) GetRoomsByUser(ctx context.Context, userID primitive.ObjectID) ([]model.Room, error) {
+func (s *RoomService) GetRoomsByUser(ctx context.Context, userID primitive.ObjectID) ([]model.RoomWithRole, error) {
     return s.roomRepo.FindByMember(ctx, userID)
 }
 

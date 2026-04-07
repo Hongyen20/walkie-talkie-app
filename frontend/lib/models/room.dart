@@ -4,6 +4,7 @@ class Room {
   final String ownerID;
   final String inviteCode;
   final bool isActive;
+  final String role;
 
   Room({
     required this.id,
@@ -11,6 +12,7 @@ class Room {
     required this.ownerID,
     required this.inviteCode,
     required this.isActive,
+    this.role = '',
   });
   factory Room.fromJson(Map<String, dynamic> json) {
     return Room(
@@ -19,6 +21,7 @@ class Room {
         ownerID: json['OwnerID'] ?? json['owner_id'] ?? '',
         inviteCode: json['InvitedCode'] ?? json['invite_code'] ?? '',
         isActive: json['IsActive'] ?? json['is_active'] ?? false,
+        role: json['role'] ?? '',
     );
   }
 }

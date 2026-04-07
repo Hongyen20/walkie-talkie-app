@@ -127,34 +127,45 @@ func (r *RoomRepository) FindByInviteCode(ctx context.Context, code string) (*mo
 }
 
 // Get all room when user join
-func (r *RoomRepository) FindByMember(ctx context.Context, userID primitive.ObjectID) ([]model.Room, error) {
-	//Find all room_members of user
+func (r *RoomRepository) FindByMember(ctx context.Context, userID primitive.ObjectID) ([]model.RoomWithRole, error) {
 	cursor, err := r.members.Find(ctx, bson.M{"user_id": userID})
 	if err != nil {
-		return []model.Room{}, nil
+		return []model.RoomWithRole{}, nil
 	}
 	var members []model.RoomMember
 	cursor.All(ctx, &members)
 
-	//Get room_id from members
-	roomIDs := make([]primitive.ObjectID, 0)
-	for _, m := range members{
-		roomIDs = append(roomIDs, m.RoomID)
-	}
-	if len(roomIDs) == 0{
-		return []model.Room{}, nil
+	if len(members) == 0 {
+		return []model.RoomWithRole{}, nil
 	}
 
-	//Find all rooms by room_id
-	cursor2 , err := r.rooms.Find(ctx, bson.M{"_id": bson.M{"$in": roomIDs}})
-	if err != nil{
-		return []model.Room{}, nil
+	// Map role theo roomID
+	roleMap := make(map[primitive.ObjectID]string)
+	roomIDs := make([]primitive.ObjectID, 0)
+	for _, m := range members {
+		roomIDs = append(roomIDs, m.RoomID)
+		roleMap[m.RoomID] = m.Role
+	}
+
+	cursor2, err := r.rooms.Find(ctx, bson.M{"_id": bson.M{"$in": roomIDs}})
+	if err != nil {
+		return []model.RoomWithRole{}, nil
 	}
 	var rooms []model.Room
 	cursor2.All(ctx, &rooms)
-	if rooms == nil{
-		return []model.Room{}, nil
-	}
-	return rooms, nil
-}
 
+	// Gắn role vào từng room
+	result := make([]model.RoomWithRole, 0)
+	for _, room := range rooms {
+		result = append(result, model.RoomWithRole{
+			ID:         room.ID,
+			Name:       room.Name,
+			OwnerID:    room.OwnerID,
+			InviteCode: room.InvitedCode,
+			IsActive:   room.IsActive,
+			CreatedAt:  room.CreatedAt,
+			Role:       roleMap[room.ID],
+		})
+	}
+	return result, nil
+}

@@ -195,18 +195,31 @@ class _RoomListScreenState extends State<RoomListScreen> {
                     room.name,
                     style: const TextStyle(color: Colors.white),
                   ),
-                  subtitle: Text(
-                    'Code: ${room.inviteCode}',
-                    style: const TextStyle(color: Colors.white54),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Code: ${room.inviteCode}',
+                        style: const TextStyle(color: Colors.white54),
+                      ),
+                      // Display role
+                      Text(
+                        room.role == 'owner' ? 'Owner' : 'Member',
+                        style: TextStyle(
+                          color: room.role == 'owner'
+                              ? const Color(0xFFFFD600)
+                              : Colors.white54,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
                   trailing: const Icon(
                     Icons.arrow_forward_ios,
                     color: Color(0xFF39FF14),
                     size: 16,
                   ),
-                  onTap: () {
-                    // Sau này navigate sang Channel List
-                  },
+                  onTap: () {},
                 );
               },
             ),
