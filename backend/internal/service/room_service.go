@@ -7,15 +7,17 @@ import (
 	"walkie-talkie-app/internal/repository"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type RoomService struct {
 	roomRepo    *repository.RoomRepository
 	channelRepo *repository.ChannelRepository
+	db          *mongo.Database
 }
 
-func NewRoomService(roomRepo *repository.RoomRepository, channelRepo *repository.ChannelRepository) *RoomService {
-	return &RoomService{roomRepo: roomRepo, channelRepo: channelRepo}
+func NewRoomService(roomRepo *repository.RoomRepository, channelRepo *repository.ChannelRepository, db *mongo.Database) *RoomService {
+	return &RoomService{roomRepo: roomRepo, channelRepo: channelRepo, db: db}
 }
 
 // Create new room
@@ -99,23 +101,23 @@ func (s *RoomService) GetChannels(ctx context.Context, roomID primitive.ObjectID
 }
 
 func (s *RoomService) GetRoomsByOwner(ctx context.Context, ownerID primitive.ObjectID) ([]model.Room, error) {
-    return s.roomRepo.FindByOwner(ctx, ownerID)
+	return s.roomRepo.FindByOwner(ctx, ownerID)
 }
 
 // Get all room, user had join
 func (s *RoomService) GetRoomsByUser(ctx context.Context, userID primitive.ObjectID) ([]model.RoomWithRole, error) {
-    return s.roomRepo.FindByMember(ctx, userID)
+	return s.roomRepo.FindByMember(ctx, userID)
 }
 
-func (s *RoomService) JoinByInviteCode(ctx context.Context, userID primitive.ObjectID, code string) (*model.Room, error){
+func (s *RoomService) JoinByInviteCode(ctx context.Context, userID primitive.ObjectID, code string) (*model.Room, error) {
 	//Find room by invite code
 	room, err := s.roomRepo.FindByInviteCode(ctx, code)
-	if err != nil{
+	if err != nil {
 		return nil, errors.New("Invalid invite code")
 	}
 
 	//Check user had join room???
-	if s.roomRepo.IsMember(ctx, room.ID, userID){
+	if s.roomRepo.IsMember(ctx, room.ID, userID) {
 		return nil, errors.New("You're already in this room.")
 	}
 
@@ -123,7 +125,7 @@ func (s *RoomService) JoinByInviteCode(ctx context.Context, userID primitive.Obj
 	member := &model.RoomMember{
 		RoomID: room.ID,
 		UserID: userID,
-		Role: "member",
+		Role:   "member",
 	}
 	if err := s.roomRepo.AddMember(ctx, member); err != nil {
 		return nil, err
@@ -132,32 +134,36 @@ func (s *RoomService) JoinByInviteCode(ctx context.Context, userID primitive.Obj
 }
 
 func (s *RoomService) IsMember(ctx context.Context, roomID, userID primitive.ObjectID) bool {
-    return s.roomRepo.IsMember(ctx, roomID, userID)
+	return s.roomRepo.IsMember(ctx, roomID, userID)
 }
 
-func (s *RoomService) DeleteRoom(ctx context.Context, roomID, userID primitive.ObjectID) error{
+func (s *RoomService) DeleteRoom(ctx context.Context, roomID, userID primitive.ObjectID) error {
 	role, err := s.roomRepo.GetMemberRole(ctx, roomID, userID)
-	if err != nil || role != "owner"{
+	if err != nil || role != "owner" {
 		return errors.New("Only owner can delete room")
 	}
 	return s.roomRepo.DeleteRoom(ctx, roomID)
 }
 
-func (s *RoomService) DeleteChannel(ctx context.Context, roomID, channelID, userID primitive.ObjectID) error{
+func (s *RoomService) DeleteChannel(ctx context.Context, roomID, channelID, userID primitive.ObjectID) error {
 	role, err := s.roomRepo.GetMemberRole(ctx, roomID, userID)
-	if err != nil || role != "owner"{
+	if err != nil || role != "owner" {
 		return errors.New("Only owner can delete channel")
 	}
 	return s.channelRepo.DeleteChannel(ctx, channelID)
 }
 
-func (s *RoomService) LeaveRoom(ctx context.Context, roomID, userID primitive.ObjectID) error{
+func (s *RoomService) LeaveRoom(ctx context.Context, roomID, userID primitive.ObjectID) error {
 	role, err := s.roomRepo.GetMemberRole(ctx, roomID, userID)
-	if err != nil{
+	if err != nil {
 		return errors.New("You aren't in this room")
 	}
-	if role == "owner"{
+	if role == "owner" {
 		return errors.New("Owner can't leave room, You shoud delete it instead")
 	}
 	return s.roomRepo.RemoveMember(ctx, roomID, userID)
+}
+
+func (s *RoomService) GetMembers(ctx context.Context, roomID primitive.ObjectID) ([]model.MemberInfo, error) {
+	return s.roomRepo.GetMembersWithInfo(ctx, s.db, roomID)
 }

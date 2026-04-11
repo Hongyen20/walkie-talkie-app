@@ -43,3 +43,10 @@ type RoomWithRole struct {
     CreatedAt  time.Time          `bson:"created_at"    json:"created_at"`
     Role       string             `bson:"-"             json:"role"` // owner | member
 }
+
+type MemberInfo struct {
+    UserID      primitive.ObjectID `bson:"user_id"   json:"user_id"`
+    Username    string             `bson:"username"  json:"username"`
+    DisplayName string             `bson:"display_name" json:"display_name"`
+    Role        string             `bson:"-"         json:"role"`
+}

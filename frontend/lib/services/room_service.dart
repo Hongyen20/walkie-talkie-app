@@ -121,4 +121,34 @@ class RoomService {
     );
     return res.statusCode == 200;
   }
+
+  Future<List<Map<String, dynamic>>> getMembers(
+    String token,
+    String roomId,
+  ) async {
+    final res = await http.get(
+      Uri.parse('${Constants.baseUrl}/rooms/$roomId/members'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      if (data == null) return [];
+      return List<Map<String, dynamic>>.from(data);
+    }
+    return [];
+  }
+
+  Future<bool> kickMember(String token, String roomId, String userId) async {
+    final res = await http.delete(
+      Uri.parse('${Constants.baseUrl}/rooms/$roomId/members/$userId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    return res.statusCode == 200;
+  }
 }

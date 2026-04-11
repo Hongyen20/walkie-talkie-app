@@ -93,14 +93,31 @@ func (r *RoomRepository) IsMember(ctx context.Context, roomID, userID primitive.
 }
 
 // Get list members of room
-func (r *RoomRepository) GetMembers(ctx context.Context, roomID primitive.ObjectID) ([]model.RoomMember, error) {
+func (r *RoomRepository) GetMembersWithInfo(ctx context.Context, db *mongo.Database, roomID primitive.ObjectID) ([]model.MemberInfo, error) {
 	cursor, err := r.members.Find(ctx, bson.M{"room_id": roomID})
 	if err != nil {
-		return nil, err
+		return []model.MemberInfo{}, nil
 	}
 	var members []model.RoomMember
 	cursor.All(ctx, &members)
-	return members, nil
+
+	usersCol := db.Collection("users")
+	result := make([]model.MemberInfo, 0)
+
+	for _, m := range members {
+		var user struct {
+			Username    string `bson:"username"`
+			DisplayName string `bson:"display_name"`
+		}
+		usersCol.FindOne(ctx, bson.M{"_id": m.UserID}).Decode(&user)
+		result = append(result, model.MemberInfo{
+			UserID:      m.UserID,
+			Username:    user.Username,
+			DisplayName: user.DisplayName,
+			Role:        m.Role,
+		})
+	}
+	return result, nil
 }
 
 // Get role of user in a room

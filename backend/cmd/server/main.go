@@ -23,26 +23,29 @@ func main() {
 
 	config.ConnectMongo(os.Getenv("MONGO_URI"), os.Getenv("MONGO_DB"))
 
-	// Wire up
+	// ✅ Wire up đầy đủ
+	userRepo := repository.NewUserRepository(config.DB)
 	roomRepo := repository.NewRoomRepository(config.DB)
 	channelRepo := repository.NewChannelRepository(config.DB)
-	roomService := service.NewRoomService(roomRepo, channelRepo)
-	roomHandler := handler.NewRoomHandler(roomService)
-	userRepo := repository.NewUserRepository(config.DB)
+
 	authService := service.NewAuthService(userRepo)
+	roomService := service.NewRoomService(roomRepo, channelRepo, config.DB)
+
 	authHandler := handler.NewAuthHandler(authService)
+	roomHandler := handler.NewRoomHandler(roomService)
 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/auth/register", authHandler.Register)
 	mux.HandleFunc("/auth/login", authHandler.Login)
+
 	mux.HandleFunc("/profile", middleware.AuthMiddleware(authService, func(w http.ResponseWriter, r *http.Request) {
 		claims := r.Context().Value(middleware.UserKey)
 		handler.WriteJSON(w, http.StatusOK, claims)
 	}))
 
 	mux.HandleFunc("/websocket", websocket.HandleWebsocket(authService, roomRepo, channelRepo))
-	// Route /rooms — GET list, POST create room
+
 	mux.HandleFunc("/rooms", middleware.AuthMiddleware(authService, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
 			roomHandler.GetRooms(w, r)
@@ -51,7 +54,8 @@ func main() {
 		}
 	}))
 
-	// Route /rooms/ — Handler channels and members
+	mux.HandleFunc("/rooms/join", middleware.AuthMiddleware(authService, roomHandler.JoinRoom))
+
 	mux.HandleFunc("/rooms/", middleware.AuthMiddleware(authService, func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(r.URL.Path, "/")
 
@@ -62,9 +66,12 @@ func main() {
 				roomHandler.CreateChannel(w, r)
 			}
 		} else if strings.HasSuffix(r.URL.Path, "/members") {
-			roomHandler.AddMember(w, r)
+			if r.Method == "GET" {
+				roomHandler.GetMembers(w, r)
+			} else if r.Method == "POST" {
+				roomHandler.AddMember(w, r)
+			}
 		} else if strings.HasSuffix(r.URL.Path, "/leave") {
-			// Route Leave
 			if r.Method == "DELETE" {
 				roomHandler.LeaveRoom(w, r)
 			}
@@ -76,20 +83,24 @@ func main() {
 			if r.Method == "DELETE" {
 				roomHandler.DeleteRoom(w, r)
 			}
+		} else if len(parts) == 5 && parts[3] == "members" {
+			if r.Method == "DELETE" {
+				roomHandler.KickMember(w, r)
+			}
+		} else if len(parts) == 3 {
+			if r.Method == "DELETE" {
+				roomHandler.DeleteRoom(w, r)
+			}
 		}
 	}))
 
-	//Join room
-	mux.HandleFunc("/rooms/join", middleware.AuthMiddleware(authService, roomHandler.JoinRoom))
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	// Wrap mux với CORS
 	log.Println("[SERVER] Running on :" + port)
 	log.Fatal(http.ListenAndServe(":"+port, corsMiddleware(mux)))
-
 }
 
 func corsMiddleware(next http.Handler) http.Handler {
@@ -98,7 +109,6 @@ func corsMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
-		// Handle preflight request
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return

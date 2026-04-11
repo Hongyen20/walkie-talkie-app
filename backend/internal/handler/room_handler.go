@@ -221,40 +221,89 @@ func (h *RoomHandler) DeleteChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	roomID, err := primitive.ObjectIDFromHex(parts[2])
-	if err != nil  {
-		WriteJSON(w, http.StatusBadRequest, map[string]string{"error":"Invalid room id"})
+	if err != nil {
+		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid room id"})
 		return
 	}
 	channelID, err := primitive.ObjectIDFromHex(parts[4])
-	if err != nil{
-		WriteJSON(w, http.StatusBadRequest, map[string]string{"error":"Inavlid channel id"})
+	if err != nil {
+		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "Inavlid channel id"})
 		return
 	}
 
-	if err := h.roomService.DeleteChannel(r.Context(), roomID, channelID, userID); err != nil{
+	if err := h.roomService.DeleteChannel(r.Context(), roomID, channelID, userID); err != nil {
 		WriteJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
 		return
 	}
 	WriteJSON(w, http.StatusOK, map[string]string{"message": "channel deleted"})
 
 }
+
 // DELETE /rooms/:id/leave
-func (h *RoomHandler) LeaveRoom(w http.ResponseWriter, r *http.Request){
+func (h *RoomHandler) LeaveRoom(w http.ResponseWriter, r *http.Request) {
 	userID, err := getUserID(r)
-	if err != nil{
-		WriteJSON(w, http.StatusUnauthorized, map[string]string{"error":"unauthozied"})
+	if err != nil {
+		WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthozied"})
 		return
 	}
-	parts := strings.Split(r.URL.Path,"/")
+	parts := strings.Split(r.URL.Path, "/")
 	roomID, err := primitive.ObjectIDFromHex(parts[2])
-	if err != nil{
+	if err != nil {
 		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalio room id"})
 		return
 	}
-	if err := h.roomService.LeaveRoom(r.Context(), roomID, userID); err !=nil{
+	if err := h.roomService.LeaveRoom(r.Context(), roomID, userID); err != nil {
 		WriteJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
 		return
 	}
 	WriteJSON(w, http.StatusOK, map[string]string{"message": "left room"})
 }
 
+// Show list member in room
+// GET /rooms/:id/members
+func (h *RoomHandler) GetMembers(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthozied"})
+		return
+	}
+	parts := strings.Split(r.URL.Path, "/")
+	roomID, err := primitive.ObjectIDFromHex(parts[2])
+	if err != nil {
+		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid room id"})
+		return
+	}
+	//Check user in room
+	if !h.roomService.IsMember(r.Context(), roomID, userID) {
+		WriteJSON(w, http.StatusForbidden, map[string]string{"error": "not a memeber"})
+		return
+	}
+	members, err := h.roomService.GetMembers(r.Context(), roomID)
+	if err != nil {
+		WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	WriteJSON(w, http.StatusOK, members)
+
+}
+
+func (h *RoomHandler) KickMember(w http.ResponseWriter, r *http.Request) {
+	ownerID, err := getUserID(r)
+	if err != nil {
+		WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthozied"})
+		return
+	}
+	parts := strings.Split(r.URL.Path, "/")
+	roomID, _ := primitive.ObjectIDFromHex(parts[2])
+	targetID, err := primitive.ObjectIDFromHex(parts[4])
+	if err != nil {
+		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid user id"})
+		return
+	}
+	if err := h.roomService.RemoveMember(r.Context(), roomID, ownerID, targetID); err != nil {
+		WriteJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]string{"message": "member kicked"})
+
+}
