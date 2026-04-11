@@ -74,3 +74,9 @@ func (r *ChannelRepository) RemoveMember(ctx context.Context, channelID, userID 
 	)
 	return err
 }
+
+//Delete channel
+func (r *ChannelRepository) DeleteChannel(ctx context.Context, channelID primitive.ObjectID) error{
+	_, err := r.col.DeleteOne(ctx, bson.M{"_id": channelID})
+	return err
+}

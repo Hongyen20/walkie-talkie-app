@@ -169,3 +169,12 @@ func (r *RoomRepository) FindByMember(ctx context.Context, userID primitive.Obje
 	}
 	return result, nil
 }
+
+// Delete Room
+func (r *RoomRepository) DeleteRoom(ctx context.Context, roomID primitive.ObjectID) error {
+	_, err := r.rooms.DeleteOne(ctx, bson.M{"_id": roomID})
+	//Delete all members in this Room
+	r.members.DeleteMany(ctx, bson.M{"room_id": roomID})
+	return err
+
+}

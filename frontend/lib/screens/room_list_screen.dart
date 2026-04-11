@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/user.dart';
 import '../models/room.dart';
 import '../services/room_service.dart';
+import 'room_screen.dart';
 
 class RoomListScreen extends StatefulWidget {
   final User user;
@@ -24,11 +25,18 @@ class _RoomListScreenState extends State<RoomListScreen> {
 
   Future<void> _loadRooms() async {
     setState(() => _isLoading = true);
-    final rooms = await _roomService.getRooms(widget.user.token);
-    setState(() {
-      _rooms = rooms;
-      _isLoading = false;
-    });
+    try {
+      final rooms = await _roomService.getRooms(widget.user.token);
+      setState(() {
+        _rooms = rooms;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   Future<void> _createRoom() async {
@@ -63,12 +71,12 @@ class _RoomListScreenState extends State<RoomListScreen> {
           TextButton(
             onPressed: () async {
               if (nameController.text.trim().isEmpty) return;
-              final room = await _roomService.createRoom(
+              await _roomService.createRoom(
                 widget.user.token,
                 nameController.text.trim(),
               );
               Navigator.pop(context);
-              if (room != null) _loadRooms();
+              _loadRooms();
             },
             child: const Text(
               'Create',
@@ -149,25 +157,62 @@ class _RoomListScreenState extends State<RoomListScreen> {
     );
   }
 
+  Future<void> _deleteRoom(Room room) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF111711),
+        title: const Text('Delete Room', style: TextStyle(color: Colors.red)),
+        content: Text(
+          'Are you sure you want to delete "${room.name}"?',
+          style: const TextStyle(color: Colors.white),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Color(0xFF39FF14)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await _roomService.deleteRoom(widget.user.token, room.id);
+      _loadRooms();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
+        automaticallyImplyLeading: false,
         title: Text(
           'Hello, ${widget.user.displayName}',
-          style: const TextStyle(color: Color(0xFF39FF14)),
+          style: const TextStyle(color: Color(0xFF39FF14), fontSize: 16),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.login, color: Color(0xFF39FF14)),
-            tooltip: 'Join Room',
+          TextButton(
             onPressed: _joinRoom,
+            child: const Text(
+              'Join',
+              style: TextStyle(color: Color(0xFF39FF14), fontSize: 13),
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Color(0xFF39FF14)),
-            onPressed: _loadRooms,
+          TextButton(
+            onPressed: _createRoom,
+            child: const Text(
+              'Add',
+              style: TextStyle(color: Color(0xFF39FF14), fontSize: 13),
+            ),
           ),
         ],
       ),
@@ -175,60 +220,216 @@ class _RoomListScreenState extends State<RoomListScreen> {
           ? const Center(
               child: CircularProgressIndicator(color: Color(0xFF39FF14)),
             )
-          : _rooms.isEmpty
-          ? const Center(
-              child: Text(
-                'No rooms yet',
-                style: TextStyle(color: Colors.white54),
-              ),
-            )
-          : ListView.builder(
-              itemCount: _rooms.length,
-              itemBuilder: (_, i) {
-                final room = _rooms[i];
-                return ListTile(
-                  leading: const Icon(
-                    Icons.meeting_room,
-                    color: Color(0xFF39FF14),
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Text(
+                    'MY ROOMS',
+                    style: TextStyle(
+                      color: Color(0xFF39FF14),
+                      fontSize: 12,
+                      letterSpacing: 3,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                  title: Text(
-                    room.name,
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Code: ${room.inviteCode}',
-                        style: const TextStyle(color: Colors.white54),
-                      ),
-                      // Display role
-                      Text(
-                        room.role == 'owner' ? 'Owner' : 'Member',
-                        style: TextStyle(
-                          color: room.role == 'owner'
-                              ? const Color(0xFFFFD600)
-                              : Colors.white54,
-                          fontSize: 12,
+                ),
+                Expanded(
+                  child: _rooms.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'No rooms yet',
+                            style: TextStyle(color: Colors.white54),
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          itemCount: _rooms.length,
+                          itemBuilder: (_, i) {
+                            final room = _rooms[i];
+                            final isOwner = room.role == 'owner';
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: isOwner
+                                      ? const Color(0xFF39FF14)
+                                      : const Color(0xFF3a3a3a),
+                                  width: 1,
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: ListTile(
+                                title: Text(
+                                  room.name,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  'Code: ${room.inviteCode}',
+                                  style: const TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                // Trailing delete room button (just owner have)
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        border: Border.all(
+                                          color: isOwner
+                                              ? const Color(0xFF39FF14)
+                                              : const Color(0xFF3a3a3a),
+                                        ),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        isOwner ? 'Owner' : 'Member',
+                                        style: TextStyle(
+                                          color: isOwner
+                                              ? const Color(0xFF39FF14)
+                                              : Colors.white54,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    // Owner have delete button, Member have Leave button
+                                    if (isOwner)
+                                      GestureDetector(
+                                        onTap: () => _deleteRoom(room),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            border: Border.all(
+                                              color: Colors.red,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            'Delete',
+                                            style: TextStyle(
+                                              color: Colors.red,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      GestureDetector(
+                                        onTap: () async {
+                                          final confirm = await showDialog<bool>(
+                                            context: context,
+                                            builder: (_) => AlertDialog(
+                                              backgroundColor: const Color(
+                                                0xFF111711,
+                                              ),
+                                              title: const Text(
+                                                'Leave Room',
+                                                style: TextStyle(
+                                                  color: Colors.red,
+                                                ),
+                                              ),
+                                              content: Text(
+                                                'Are you sure you want to leave "${room.name}"?',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(
+                                                        context,
+                                                        false,
+                                                      ),
+                                                  child: const Text(
+                                                    'Cancel',
+                                                    style: TextStyle(
+                                                      color: Color(0xFF39FF14),
+                                                    ),
+                                                  ),
+                                                ),
+                                                TextButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(
+                                                        context,
+                                                        true,
+                                                      ),
+                                                  child: const Text(
+                                                    'Leave',
+                                                    style: TextStyle(
+                                                      color: Colors.red,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                          if (confirm == true) {
+                                            await _roomService.leaveRoom(
+                                              widget.user.token,
+                                              room.id,
+                                            );
+                                            _loadRooms();
+                                          }
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            border: Border.all(
+                                              color: Colors.orange,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            'Leave',
+                                            style: TextStyle(
+                                              color: Colors.orange,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => RoomScreen(
+                                        user: widget.user,
+                                        room: room,
+                                      ),
+                                    ),
+                                  ).then((_) => _loadRooms());
+                                },
+                              ),
+                            );
+                          },
                         ),
-                      ),
-                    ],
-                  ),
-                  trailing: const Icon(
-                    Icons.arrow_forward_ios,
-                    color: Color(0xFF39FF14),
-                    size: 16,
-                  ),
-                  onTap: () {},
-                );
-              },
+                ),
+              ],
             ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: const Color(0xFF39FF14),
-        foregroundColor: Colors.black,
-        onPressed: _createRoom,
-        child: const Icon(Icons.add),
-      ),
     );
   }
 }

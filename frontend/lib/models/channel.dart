@@ -13,10 +13,10 @@ class Channel {
 
   factory Channel.fromJson(Map<String, dynamic> json) {
     return Channel(
-      id: json['id'] ?? '',
-      roomID: json['room_id'] ?? '',
-      name: json['name'] ?? '',
-      isLocked: json['is_locked'] ?? false,
+      id: json['ID'] ?? json['id'] ?? '',
+      roomID: json['RoomID'] ?? json['room_id'] ?? '',
+      name: json['Name'] ?? json['name'] ?? '',
+      isLocked: json['IsLocked'] ?? json['is_locked'] ?? false,
     );
   }
 }

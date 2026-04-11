@@ -130,3 +130,34 @@ func (s *RoomService) JoinByInviteCode(ctx context.Context, userID primitive.Obj
 	}
 	return room, nil
 }
+
+func (s *RoomService) IsMember(ctx context.Context, roomID, userID primitive.ObjectID) bool {
+    return s.roomRepo.IsMember(ctx, roomID, userID)
+}
+
+func (s *RoomService) DeleteRoom(ctx context.Context, roomID, userID primitive.ObjectID) error{
+	role, err := s.roomRepo.GetMemberRole(ctx, roomID, userID)
+	if err != nil || role != "owner"{
+		return errors.New("Only owner can delete room")
+	}
+	return s.roomRepo.DeleteRoom(ctx, roomID)
+}
+
+func (s *RoomService) DeleteChannel(ctx context.Context, roomID, channelID, userID primitive.ObjectID) error{
+	role, err := s.roomRepo.GetMemberRole(ctx, roomID, userID)
+	if err != nil || role != "owner"{
+		return errors.New("Only owner can delete channel")
+	}
+	return s.channelRepo.DeleteChannel(ctx, channelID)
+}
+
+func (s *RoomService) LeaveRoom(ctx context.Context, roomID, userID primitive.ObjectID) error{
+	role, err := s.roomRepo.GetMemberRole(ctx, roomID, userID)
+	if err != nil{
+		return errors.New("You aren't in this room")
+	}
+	if role == "owner"{
+		return errors.New("Owner can't leave room, You shoud delete it instead")
+	}
+	return s.roomRepo.RemoveMember(ctx, roomID, userID)
+}
