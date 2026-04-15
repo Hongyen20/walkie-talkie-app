@@ -51,7 +51,7 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 		username := (*claims)["username"].(string)
 		userIDStr := (*claims)["user_id"].(string)
 		userID, _ := primitive.ObjectIDFromHex(userIDStr)
-		
+
 		//Get room_id and channel_id from query
 		roomIDStr := r.URL.Query().Get("room_id")
 		channelIDStr := r.URL.Query().Get("channel_id")
@@ -68,7 +68,7 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 			http.Error(w, `{"error":"Invalid room_id"}`, http.StatusBadRequest)
 			return
 		}
-		if !roomRepo.IsMember(r.Context(), roomID, userID){
+		if !roomRepo.IsMember(r.Context(), roomID, userID) {
 			http.Error(w, `"error":"not a member of this room"`, http.StatusForbidden)
 			return
 		}
@@ -166,7 +166,10 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 			case "chat":
 				jsonMsg, _ := json.Marshal(incoming)
 				wsRoom.BroadcastToChannel(client, channelIDStr, jsonMsg)
-
+			case "ptt-start", "ptt-stop":
+				// Broadcast in channel để mọi người biết ai đang nói
+				jsonMsg, _ := json.Marshal(incoming)
+				wsRoom.BroadcastToChannel(client, channelIDStr, jsonMsg)
 			default:
 				log.Printf("[WARN]Unknown type: %s\n", incoming.Type)
 			}

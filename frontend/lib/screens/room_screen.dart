@@ -3,7 +3,7 @@ import '../models/user.dart';
 import '../models/room.dart';
 import '../models/channel.dart';
 import '../services/room_service.dart';
-
+import 'channel_screen.dart';
 class RoomScreen extends StatefulWidget {
   final User user;
   final Room room;
@@ -496,7 +496,16 @@ class _RoomScreenState extends State<RoomScreen> {
                           onTap: ch.isLocked
                               ? null
                               : () {
-                                  // Sau này navigate sang PTT Screen
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => ChannelScreen(
+                                        user: widget.user,
+                                        room: widget.room,
+                                        channel: ch,
+                                      ),
+                                    ),
+                                  );
                                 },
                         ),
                       );
