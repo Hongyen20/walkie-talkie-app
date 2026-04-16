@@ -66,7 +66,11 @@ class _ChannelScreenState extends State<ChannelScreen> {
 
     switch (type) {
       case 'your-id':
-        _addLog('Connected as ${msg['message']}');
+        final myId = msg['message'] as String;
+        if (!_onlineUsers.contains(myId)) {
+          setState(() => _onlineUsers.add(myId));
+        }
+        _addLog('Connected as $myId');
         break;
 
       case 'user-joined':
@@ -92,6 +96,13 @@ class _ChannelScreenState extends State<ChannelScreen> {
 
       case 'chat':
         _addLog('[${msg['from']}]: ${msg['message']}');
+        break;
+      case 'online-list':
+        final list = (msg['message'] as String)
+          .split(',')
+          .where((s) => s.isNotEmpty)
+          .toList();
+        setState(() => _onlineUsers = list);
         break;
     }
   }

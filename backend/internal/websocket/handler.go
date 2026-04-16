@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"walkie-talkie-app/internal/repository"
 	"walkie-talkie-app/internal/room"
 	"walkie-talkie-app/internal/service"
@@ -145,6 +146,15 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 
 			switch incoming.Type {
 			case "join":
+				//Send list user online for user joining
+				onlineList := Message{
+					Type:	"online-list",
+					From: 	"server",
+					Message: strings.Join(wsRoom.GetClientIDs(), ","),
+				}
+				jsonList, _ := json.Marshal(onlineList)
+				wsRoom.SendTo(username, jsonList)
+
 				//Notify for users know when someone join
 				notify := Message{
 					Type:    "user-joined",

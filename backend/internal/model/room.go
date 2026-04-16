@@ -46,7 +46,6 @@ type RoomWithRole struct {
 
 type MemberInfo struct {
     UserID      primitive.ObjectID `bson:"user_id"   json:"user_id"`
-    Username    string             `bson:"username"  json:"username"`
     DisplayName string             `bson:"display_name" json:"display_name"`
     Role        string             `bson:"-"         json:"role"`
 }

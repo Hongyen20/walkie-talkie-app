@@ -112,7 +112,6 @@ func (r *RoomRepository) GetMembersWithInfo(ctx context.Context, db *mongo.Datab
 		usersCol.FindOne(ctx, bson.M{"_id": m.UserID}).Decode(&user)
 		result = append(result, model.MemberInfo{
 			UserID:      m.UserID,
-			Username:    user.Username,
 			DisplayName: user.DisplayName,
 			Role:        m.Role,
 		})

@@ -4,6 +4,7 @@ import '../models/room.dart';
 import '../models/channel.dart';
 import '../services/room_service.dart';
 import 'channel_screen.dart';
+
 class RoomScreen extends StatefulWidget {
   final User user;
   final Room room;
@@ -153,7 +154,6 @@ class _RoomScreenState extends State<RoomScreen> {
                     final m = members[i];
                     final role = m['role'] ?? '';
                     return ListTile(
-                      // ✅ Số thứ tự thay vì icon lỗi
                       leading: Container(
                         width: 28,
                         height: 28,
@@ -185,13 +185,7 @@ class _RoomScreenState extends State<RoomScreen> {
                           fontSize: 13,
                         ),
                       ),
-                      subtitle: Text(
-                        '@${m['username'] ?? ''}',
-                        style: const TextStyle(
-                          color: Colors.white54,
-                          fontSize: 11,
-                        ),
-                      ),
+
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
