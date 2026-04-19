@@ -4,6 +4,7 @@ import '../models/room.dart';
 import '../models/channel.dart';
 import '../services/room_service.dart';
 import '../services/websocket_service.dart';
+import '../services/webrtc_service.dart';
 
 class ChannelScreen extends StatefulWidget {
   final User user;
@@ -24,9 +25,11 @@ class ChannelScreen extends StatefulWidget {
 class _ChannelScreenState extends State<ChannelScreen> {
   final _roomService = RoomService();
   final _wsService = WebSocketService();
+  final _webrtcService = WebRTCService();
   List<Map<String, dynamic>> _members = [];
   List<String> _onlineUsers = [];
   bool _isTalking = false;
+  bool _webrtcReady = false;
   String _talkingUser = '--';
   List<String> _activityLog = [];
 
@@ -35,11 +38,13 @@ class _ChannelScreenState extends State<ChannelScreen> {
     super.initState();
     _loadMembers();
     _connectWebSocket();
+    _initWebRTC();
   }
 
   @override
   void dispose() {
     _wsService.disconnect();
+    _webrtcService.dispose();
     super.dispose();
   }
 
@@ -54,10 +59,39 @@ class _ChannelScreenState extends State<ChannelScreen> {
   void _connectWebSocket() {
     _wsService.onMessage = _handleMessage;
     _wsService.connect(widget.user.token, widget.room.id, widget.channel.id);
-    // Gửi join sau khi connect
     Future.delayed(const Duration(milliseconds: 500), () {
       _wsService.send({'type': 'join'});
     });
+  }
+
+  Future<void> _initWebRTC() async {
+    _webrtcService.onOffer = (targetID, offer) {
+      _wsService.send({'type': 'offer', 'to': targetID, 'message': offer});
+    };
+
+    _webrtcService.onAnswer = (targetID, answer) {
+      _wsService.send({'type': 'answer', 'to': targetID, 'message': answer});
+    };
+
+    _webrtcService.onIceCandidate = (targetID, candidate) {
+      _wsService.send({
+        'type': 'ice-candidate',
+        'to': targetID,
+        'message': candidate,
+      });
+    };
+
+    _webrtcService.onRemoteStream = (stream) {
+      print('[WebRTC] Got remote stream');
+    };
+
+    final ok = await _webrtcService.initLocalStream();
+    setState(() => _webrtcReady = ok);
+    if (ok) {
+      _addLog('Microphone ready');
+    } else {
+      _addLog('Microphone access denied');
+    }
   }
 
   void _handleMessage(Map<String, dynamic> msg) {
@@ -73,9 +107,27 @@ class _ChannelScreenState extends State<ChannelScreen> {
         _addLog('Connected as $myId');
         break;
 
+      case 'online-list':
+        final list = (msg['message'] as String)
+            .split(',')
+            .where((s) => s.isNotEmpty)
+            .toList();
+        setState(() => _onlineUsers = list);
+        if (list.isNotEmpty && _webrtcReady) {
+          _webrtcService.callAll(list);
+        }
+        break;
+
       case 'user-joined':
         if (!_onlineUsers.contains(from)) {
           setState(() => _onlineUsers.add(from));
+        }
+        if (_webrtcReady) {
+          _webrtcService.createOffer(from).then((offer) {
+            if (offer != null) {
+              _wsService.send({'type': 'offer', 'to': from, 'message': offer});
+            }
+          });
         }
         _addLog('$from joined');
         break;
@@ -83,6 +135,22 @@ class _ChannelScreenState extends State<ChannelScreen> {
       case 'user-left':
         setState(() => _onlineUsers.remove(from));
         _addLog('$from left');
+        break;
+
+      case 'offer':
+        _webrtcService.createAnswer(from, msg['message']).then((answer) {
+          if (answer != null) {
+            _wsService.send({'type': 'answer', 'to': from, 'message': answer});
+          }
+        });
+        break;
+
+      case 'answer':
+        _webrtcService.setAnswer(from, msg['message']);
+        break;
+
+      case 'ice-candidate':
+        _webrtcService.addIceCandidate(from, msg['message']);
         break;
 
       case 'ptt-start':
@@ -97,13 +165,6 @@ class _ChannelScreenState extends State<ChannelScreen> {
       case 'chat':
         _addLog('[${msg['from']}]: ${msg['message']}');
         break;
-      case 'online-list':
-        final list = (msg['message'] as String)
-          .split(',')
-          .where((s) => s.isNotEmpty)
-          .toList();
-        setState(() => _onlineUsers = list);
-        break;
     }
   }
 
@@ -115,10 +176,15 @@ class _ChannelScreenState extends State<ChannelScreen> {
   }
 
   void _startTalk() {
+    if (!_webrtcReady) {
+      _addLog('Microphone not ready');
+      return;
+    }
     setState(() {
       _isTalking = true;
       _talkingUser = widget.user.username;
     });
+    _webrtcService.startTalking();
     _wsService.send({'type': 'ptt-start'});
     _addLog('You are talking...');
   }
@@ -128,6 +194,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
       _isTalking = false;
       _talkingUser = '--';
     });
+    _webrtcService.stopTalking();
     _wsService.send({'type': 'ptt-stop'});
   }
 
@@ -252,6 +319,13 @@ class _ChannelScreenState extends State<ChannelScreen> {
           ],
         ),
         actions: [
+          // ✅ Mic status indicator
+          Icon(
+            _webrtcReady ? Icons.mic : Icons.mic_off,
+            color: _webrtcReady ? const Color(0xFF39FF14) : Colors.red,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
           TextButton(
             onPressed: _showMembers,
             child: const Text(
@@ -373,11 +447,16 @@ class _ChannelScreenState extends State<ChannelScreen> {
                               color: Color(0xFF39FF14),
                             ),
                           ),
-                          Text(
-                            _activityLog[i],
-                            style: const TextStyle(
-                              color: Color(0xFF4a6b4a),
-                              fontSize: 11,
+                          Expanded(
+                            // ✅ thêm Expanded
+                            child: Text(
+                              _activityLog[i],
+                              style: const TextStyle(
+                                color: Color(0xFF4a6b4a),
+                                fontSize: 11,
+                              ),
+                              overflow: TextOverflow
+                                  .ellipsis, 
                             ),
                           ),
                         ],
