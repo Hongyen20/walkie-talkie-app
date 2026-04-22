@@ -26,10 +26,10 @@ var mainRoom = room.NewRoom("main")
 var manager = room.NewRoomManager()
 
 type Message struct {
-	Type    string `json:"type"` //chat - offer - answer - candidate
-	From    string `json:"from"`
-	To      string `json:"to"`
-	Message string `json:"message"`
+	Type    string          `json:"type"` //chat - offer - answer - candidate
+	From    string          `json:"from"`
+	To      string          `json:"to"`
+	Message json.RawMessage `json:"message"`
 }
 
 func HandleWebsocket(authService *service.AuthService, roomRepo *repository.RoomRepository, channelRepo *repository.ChannelRepository) http.HandlerFunc {
@@ -115,10 +115,11 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 		}()
 
 		//Send ID for client
+		selfMsgStr, _ := json.Marshal(username)
 		selfMsg := Message{
 			Type:    "your-id",
 			From:    "server",
-			Message: username,
+			Message: selfMsgStr,
 		}
 		jsonSelf, _ := json.Marshal(selfMsg)
 		wsRoom.SendTo(username, jsonSelf)
@@ -133,10 +134,11 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 
 			var incoming Message
 			if err := json.Unmarshal(msg, &incoming); err != nil {
+				rawMsg, _ := json.Marshal(string(msg))
 				incoming = Message{
 					Type:    "chat",
 					From:    username,
-					Message: string(msg),
+					Message: rawMsg,
 				}
 			} else {
 				incoming.From = username
@@ -146,23 +148,27 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 
 			switch incoming.Type {
 			case "join":
-				//Send list user online for user joining
+				// online-list
+				listStr := strings.Join(wsRoom.GetClientIDs(), ",")
+				listJSON, _ := json.Marshal(listStr)
 				onlineList := Message{
-					Type:	"online-list",
-					From: 	"server",
-					Message: strings.Join(wsRoom.GetClientIDs(), ","),
+					Type:    "online-list",
+					From:    "server",
+					Message: listJSON,
 				}
 				jsonList, _ := json.Marshal(onlineList)
 				wsRoom.SendTo(username, jsonList)
 
-				//Notify for users know when someone join
+				// user-joined
+				notifyMsg, _ := json.Marshal(username + " joined channel")
 				notify := Message{
 					Type:    "user-joined",
 					From:    username,
-					Message: username + "joined channel",
+					Message: notifyMsg,
 				}
 				jsonMsg, _ := json.Marshal(notify)
 				wsRoom.BroadcastToChannel(client, channelIDStr, jsonMsg)
+
 			case "offer", "answer", "ice-candidate":
 				// Forward to correct receiver
 				if incoming.To == "" {

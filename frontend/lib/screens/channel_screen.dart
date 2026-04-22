@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../models/user.dart';
 import '../models/room.dart';
@@ -87,11 +88,19 @@ class _ChannelScreenState extends State<ChannelScreen> {
 
     final ok = await _webrtcService.initLocalStream();
     setState(() => _webrtcReady = ok);
-    if (ok) {
-      _addLog('Microphone ready');
-    } else {
-      _addLog('Microphone access denied');
+    _addLog(ok ? 'Microphone ready' : 'Microphone access denied');
+  }
+
+  // ✅ Helper decode message
+  dynamic _decodeMessage(dynamic raw) {
+    if (raw is String) {
+      try {
+        return jsonDecode(raw);
+      } catch (_) {
+        return raw;
+      }
     }
+    return raw;
   }
 
   void _handleMessage(Map<String, dynamic> msg) {
@@ -100,7 +109,9 @@ class _ChannelScreenState extends State<ChannelScreen> {
 
     switch (type) {
       case 'your-id':
-        final myId = msg['message'] as String;
+        final myId = msg['message'] is String
+            ? msg['message']
+            : msg['message'].toString();
         if (!_onlineUsers.contains(myId)) {
           setState(() => _onlineUsers.add(myId));
         }
@@ -108,10 +119,9 @@ class _ChannelScreenState extends State<ChannelScreen> {
         break;
 
       case 'online-list':
-        final list = (msg['message'] as String)
-            .split(',')
-            .where((s) => s.isNotEmpty)
-            .toList();
+        final raw = msg['message'];
+        final listStr = raw is String ? raw : raw.toString();
+        final list = listStr.split(',').where((s) => s.isNotEmpty).toList();
         setState(() => _onlineUsers = list);
         if (list.isNotEmpty && _webrtcReady) {
           _webrtcService.callAll(list);
@@ -138,7 +148,9 @@ class _ChannelScreenState extends State<ChannelScreen> {
         break;
 
       case 'offer':
-        _webrtcService.createAnswer(from, msg['message']).then((answer) {
+        // ✅ decode message trước khi xử lý
+        final offerData = _decodeMessage(msg['message']);
+        _webrtcService.createAnswer(from, offerData).then((answer) {
           if (answer != null) {
             _wsService.send({'type': 'answer', 'to': from, 'message': answer});
           }
@@ -146,11 +158,15 @@ class _ChannelScreenState extends State<ChannelScreen> {
         break;
 
       case 'answer':
-        _webrtcService.setAnswer(from, msg['message']);
+        // ✅ decode message trước khi xử lý
+        final answerData = _decodeMessage(msg['message']);
+        _webrtcService.setAnswer(from, answerData);
         break;
 
       case 'ice-candidate':
-        _webrtcService.addIceCandidate(from, msg['message']);
+        // ✅ decode message trước khi xử lý
+        final candidateData = _decodeMessage(msg['message']);
+        _webrtcService.addIceCandidate(from, candidateData);
         break;
 
       case 'ptt-start':
@@ -163,7 +179,10 @@ class _ChannelScreenState extends State<ChannelScreen> {
         break;
 
       case 'chat':
-        _addLog('[${msg['from']}]: ${msg['message']}');
+        final chatMsg = msg['message']?.toString() ?? '';
+        if (!chatMsg.startsWith('{')) {
+          _addLog('[${msg['from']}]: $chatMsg');
+        }
         break;
     }
   }
@@ -319,7 +338,6 @@ class _ChannelScreenState extends State<ChannelScreen> {
           ],
         ),
         actions: [
-          // ✅ Mic status indicator
           Icon(
             _webrtcReady ? Icons.mic : Icons.mic_off,
             color: _webrtcReady ? const Color(0xFF39FF14) : Colors.red,
@@ -448,15 +466,13 @@ class _ChannelScreenState extends State<ChannelScreen> {
                             ),
                           ),
                           Expanded(
-                            // ✅ thêm Expanded
                             child: Text(
                               _activityLog[i],
                               style: const TextStyle(
                                 color: Color(0xFF4a6b4a),
                                 fontSize: 11,
                               ),
-                              overflow: TextOverflow
-                                  .ellipsis, 
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
@@ -537,26 +553,29 @@ class _ChannelScreenState extends State<ChannelScreen> {
                 ),
                 const SizedBox(height: 28),
 
-                // Stats
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _statItem('${_members.length}', 'MEMBERS'),
-                    Container(
-                      width: 0.5,
-                      height: 28,
-                      color: const Color(0xFF1f2e1f),
-                      margin: const EdgeInsets.symmetric(horizontal: 20),
-                    ),
-                    _statItem('${_onlineUsers.length}', 'ONLINE'),
-                    Container(
-                      width: 0.5,
-                      height: 28,
-                      color: const Color(0xFF1f2e1f),
-                      margin: const EdgeInsets.symmetric(horizontal: 20),
-                    ),
-                    _statItem(_talkingUser, 'TALKING'),
-                  ],
+                // ✅ Stats — bọc FittedBox tránh overflow
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _statItem('${_members.length}', 'MEMBERS'),
+                      Container(
+                        width: 0.5,
+                        height: 28,
+                        color: const Color(0xFF1f2e1f),
+                        margin: const EdgeInsets.symmetric(horizontal: 20),
+                      ),
+                      _statItem('${_onlineUsers.length}', 'ONLINE'),
+                      Container(
+                        width: 0.5,
+                        height: 28,
+                        color: const Color(0xFF1f2e1f),
+                        margin: const EdgeInsets.symmetric(horizontal: 20),
+                      ),
+                      _statItem(_talkingUser, 'TALKING'),
+                    ],
+                  ),
                 ),
               ],
             ),
