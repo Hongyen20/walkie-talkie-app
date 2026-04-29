@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"walkie-talkie-app/internal/middleware"
 	"walkie-talkie-app/internal/repository"
 	"walkie-talkie-app/internal/service"
+	"walkie-talkie-app/internal/sfu"
 	"walkie-talkie-app/internal/websocket"
 
 	"github.com/joho/godotenv"
@@ -23,7 +25,7 @@ func main() {
 
 	config.ConnectMongo(os.Getenv("MONGO_URI"), os.Getenv("MONGO_DB"))
 
-	// ✅ Wire up đầy đủ
+	// Wire up
 	userRepo := repository.NewUserRepository(config.DB)
 	roomRepo := repository.NewRoomRepository(config.DB)
 	channelRepo := repository.NewChannelRepository(config.DB)
@@ -34,8 +36,23 @@ func main() {
 	authHandler := handler.NewAuthHandler(authService)
 	roomHandler := handler.NewRoomHandler(roomService)
 
+	// WebSocket manager — use for notify renegotiation
+	wsManager := websocket.GetManager()
+
+	// notifyFunc with log debug
+	notifyFunc := func(username string, msg map[string]interface{}) {
+		data, _ := json.Marshal(msg)
+		log.Printf("[NOTIFY] Sending to %s: %s\n", username, string(data))
+		wsManager.SendToUser(username, data)
+	}
+
+	// SFU
+	sfuManager := sfu.NewManager()
+	sfuHandler := handler.NewSFUHandler(sfuManager, notifyFunc)
+
 	mux := http.NewServeMux()
 
+	// Auth routes
 	mux.HandleFunc("/auth/register", authHandler.Register)
 	mux.HandleFunc("/auth/login", authHandler.Login)
 
@@ -44,8 +61,10 @@ func main() {
 		handler.WriteJSON(w, http.StatusOK, claims)
 	}))
 
+	// WebSocket
 	mux.HandleFunc("/websocket", websocket.HandleWebsocket(authService, roomRepo, channelRepo))
 
+	// Room routes
 	mux.HandleFunc("/rooms", middleware.AuthMiddleware(authService, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
 			roomHandler.GetRooms(w, r)
@@ -79,10 +98,6 @@ func main() {
 			if r.Method == "DELETE" {
 				roomHandler.DeleteChannel(w, r)
 			}
-		} else if len(parts) == 3 {
-			if r.Method == "DELETE" {
-				roomHandler.DeleteRoom(w, r)
-			}
 		} else if len(parts) == 5 && parts[3] == "members" {
 			if r.Method == "DELETE" {
 				roomHandler.KickMember(w, r)
@@ -93,6 +108,12 @@ func main() {
 			}
 		}
 	}))
+
+	// SFU routes
+	mux.HandleFunc("/sfu/offer", middleware.AuthMiddleware(authService, sfuHandler.HandleOffer))
+	mux.HandleFunc("/sfu/ice", middleware.AuthMiddleware(authService, sfuHandler.HandleICE))
+	mux.HandleFunc("/sfu/leave", middleware.AuthMiddleware(authService, sfuHandler.HandleLeave))
+	mux.HandleFunc("/sfu/renegotiate", middleware.AuthMiddleware(authService, sfuHandler.HandleRenegotiate))
 
 	port := os.Getenv("PORT")
 	if port == "" {

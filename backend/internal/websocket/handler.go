@@ -25,6 +25,12 @@ var upgrader = websocket.Upgrader{
 var mainRoom = room.NewRoom("main")
 var manager = room.NewRoomManager()
 
+var Manager = manager
+
+func GetManager() *room.RoomManager {
+    return manager
+}
+
 type Message struct {
 	Type    string          `json:"type"` //chat - offer - answer - candidate
 	From    string          `json:"from"`

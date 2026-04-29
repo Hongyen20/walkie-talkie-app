@@ -5,7 +5,7 @@ import '../models/room.dart';
 import '../models/channel.dart';
 import '../services/room_service.dart';
 import '../services/websocket_service.dart';
-import '../services/webrtc_service.dart';
+import '../services/webrtc_sfu_service.dart';
 
 class ChannelScreen extends StatefulWidget {
   final User user;
@@ -26,7 +26,7 @@ class ChannelScreen extends StatefulWidget {
 class _ChannelScreenState extends State<ChannelScreen> {
   final _roomService = RoomService();
   final _wsService = WebSocketService();
-  final _webrtcService = WebRTCService();
+  final _sfuService = WebRTCSFUService(); // ✅ dùng SFU
   List<Map<String, dynamic>> _members = [];
   List<String> _onlineUsers = [];
   bool _isTalking = false;
@@ -45,7 +45,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
   @override
   void dispose() {
     _wsService.disconnect();
-    _webrtcService.dispose();
+    _sfuService.disconnect();
     super.dispose();
   }
 
@@ -66,32 +66,35 @@ class _ChannelScreenState extends State<ChannelScreen> {
   }
 
   Future<void> _initWebRTC() async {
-    _webrtcService.onOffer = (targetID, offer) {
-      _wsService.send({'type': 'offer', 'to': targetID, 'message': offer});
+    // Init mic
+    final ok = await _sfuService.initLocalStream();
+    if (!ok) {
+      setState(() => _webrtcReady = false);
+      _addLog('Microphone access denied');
+      return;
+    }
+
+    // Kết nối SFU server
+    _sfuService.onStatusChange = (state) {
+      if (state == 'connected') {
+        setState(() => _webrtcReady = true);
+        _addLog('Connected to SFU');
+      } else if (state == 'failed' || state == 'disconnected') {
+        setState(() => _webrtcReady = false);
+        _addLog('SFU disconnected');
+      }
     };
 
-    _webrtcService.onAnswer = (targetID, answer) {
-      _wsService.send({'type': 'answer', 'to': targetID, 'message': answer});
-    };
+    final connected = await _sfuService.connect(
+      widget.user.token,
+      widget.room.id,
+      widget.channel.id,
+    );
 
-    _webrtcService.onIceCandidate = (targetID, candidate) {
-      _wsService.send({
-        'type': 'ice-candidate',
-        'to': targetID,
-        'message': candidate,
-      });
-    };
-
-    _webrtcService.onRemoteStream = (stream) {
-      print('[WebRTC] Got remote stream');
-    };
-
-    final ok = await _webrtcService.initLocalStream();
-    setState(() => _webrtcReady = ok);
-    _addLog(ok ? 'Microphone ready' : 'Microphone access denied');
+    setState(() => _webrtcReady = connected);
+    _addLog(connected ? 'Microphone ready' : 'SFU connection failed');
   }
 
-  // ✅ Helper decode message
   dynamic _decodeMessage(dynamic raw) {
     if (raw is String) {
       try {
@@ -123,21 +126,11 @@ class _ChannelScreenState extends State<ChannelScreen> {
         final listStr = raw is String ? raw : raw.toString();
         final list = listStr.split(',').where((s) => s.isNotEmpty).toList();
         setState(() => _onlineUsers = list);
-        if (list.isNotEmpty && _webrtcReady) {
-          _webrtcService.callAll(list);
-        }
         break;
 
       case 'user-joined':
         if (!_onlineUsers.contains(from)) {
           setState(() => _onlineUsers.add(from));
-        }
-        if (_webrtcReady) {
-          _webrtcService.createOffer(from).then((offer) {
-            if (offer != null) {
-              _wsService.send({'type': 'offer', 'to': from, 'message': offer});
-            }
-          });
         }
         _addLog('$from joined');
         break;
@@ -145,28 +138,6 @@ class _ChannelScreenState extends State<ChannelScreen> {
       case 'user-left':
         setState(() => _onlineUsers.remove(from));
         _addLog('$from left');
-        break;
-
-      case 'offer':
-        // ✅ decode message trước khi xử lý
-        final offerData = _decodeMessage(msg['message']);
-        _webrtcService.createAnswer(from, offerData).then((answer) {
-          if (answer != null) {
-            _wsService.send({'type': 'answer', 'to': from, 'message': answer});
-          }
-        });
-        break;
-
-      case 'answer':
-        // ✅ decode message trước khi xử lý
-        final answerData = _decodeMessage(msg['message']);
-        _webrtcService.setAnswer(from, answerData);
-        break;
-
-      case 'ice-candidate':
-        // ✅ decode message trước khi xử lý
-        final candidateData = _decodeMessage(msg['message']);
-        _webrtcService.addIceCandidate(from, candidateData);
         break;
 
       case 'ptt-start':
@@ -182,6 +153,12 @@ class _ChannelScreenState extends State<ChannelScreen> {
         final chatMsg = msg['message']?.toString() ?? '';
         if (!chatMsg.startsWith('{')) {
           _addLog('[${msg['from']}]: $chatMsg');
+        }
+        break;
+      case 'sfu-renegotiate':
+        final newSdp = msg['message']?.toString() ?? '';
+        if (newSdp.isNotEmpty) {
+          _sfuService.handleRenegotiate(newSdp);
         }
         break;
     }
@@ -203,7 +180,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
       _isTalking = true;
       _talkingUser = widget.user.username;
     });
-    _webrtcService.startTalking();
+    _sfuService.startTalking();
     _wsService.send({'type': 'ptt-start'});
     _addLog('You are talking...');
   }
@@ -213,7 +190,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
       _isTalking = false;
       _talkingUser = '--';
     });
-    _webrtcService.stopTalking();
+    _sfuService.stopTalking();
     _wsService.send({'type': 'ptt-stop'});
   }
 
@@ -553,7 +530,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
                 ),
                 const SizedBox(height: 28),
 
-                // ✅ Stats — bọc FittedBox tránh overflow
+                // Stats
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Row(
@@ -607,5 +584,18 @@ class _ChannelScreenState extends State<ChannelScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _reconnectSFU() async {
+    print('[SFU] Reconnecting to get new tracks...');
+    await _sfuService.disconnect();
+    await Future.delayed(const Duration(milliseconds: 500));
+    final connected = await _sfuService.connect(
+      widget.user.token,
+      widget.room.id,
+      widget.channel.id,
+    );
+    setState(() => _webrtcReady = connected);
+    _addLog(connected ? 'Reconnected to SFU' : 'SFU reconnect failed');
   }
 }
