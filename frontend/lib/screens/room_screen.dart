@@ -20,6 +20,13 @@ class _RoomScreenState extends State<RoomScreen> {
   List<Channel> _channels = [];
   bool _isLoading = true;
 
+  // ── Colors ──────────────────────────────────────
+  static const _bg = Color(0xFFF0F4FF);
+  static const _blue = Color(0xFF1A56DB);
+  static const _white = Colors.white;
+  static const _text = Color(0xFF111827);
+  static const _textSub = Color(0xFF6B7280);
+
   @override
   void initState() {
     super.initState();
@@ -38,6 +45,38 @@ class _RoomScreenState extends State<RoomScreen> {
     });
   }
 
+  void _showSnack(String msg, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: isError ? const Color(0xFFEF4444) : _blue,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  InputDecoration _dialogInput(String label, String hint) => InputDecoration(
+    labelText: label,
+    labelStyle: const TextStyle(color: _textSub, fontSize: 13),
+    hintText: hint,
+    hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
+    filled: true,
+    fillColor: const Color(0xFFF9FAFB),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: _blue, width: 1.5),
+    ),
+  );
+
   Future<void> _createChannel() async {
     if (widget.room.role != 'owner') return;
     final nameController = TextEditingController();
@@ -45,31 +84,27 @@ class _RoomScreenState extends State<RoomScreen> {
     await showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF111711),
+        backgroundColor: _white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           'Create Channel',
-          style: TextStyle(color: Color(0xFF39FF14)),
+          style: TextStyle(
+            color: _text,
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+          ),
         ),
         content: TextField(
           controller: nameController,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
-            labelText: 'Channel Name',
-            labelStyle: TextStyle(color: Color(0xFF39FF14)),
-            enabledBorder: OutlineInputBorder(
-              borderSide: BorderSide(color: Color(0xFF1f2e1f)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderSide: BorderSide(color: Color(0xFF39FF14)),
-            ),
-          ),
+          style: const TextStyle(color: _text),
+          decoration: _dialogInput('Channel Name', 'e.g. Construction Site A'),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: Colors.red)),
+            child: const Text('Cancel', style: TextStyle(color: _textSub)),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () async {
               if (nameController.text.trim().isEmpty) return;
               await _roomService.createChannel(
@@ -80,10 +115,15 @@ class _RoomScreenState extends State<RoomScreen> {
               Navigator.pop(context);
               _loadChannels();
             },
-            child: const Text(
-              'Create',
-              style: TextStyle(color: Color(0xFF39FF14)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _blue,
+              foregroundColor: _white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
+            child: const Text('Create'),
           ),
         ],
       ),
@@ -94,26 +134,36 @@ class _RoomScreenState extends State<RoomScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF111711),
+        backgroundColor: _white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           'Delete Channel',
-          style: TextStyle(color: Colors.red),
+          style: TextStyle(
+            color: Color(0xFFEF4444),
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+          ),
         ),
         content: Text(
-          'Are you sure you want to delete "${ch.name}"?',
-          style: const TextStyle(color: Colors.white),
+          'Delete "${ch.name}"?',
+          style: const TextStyle(color: _textSub, fontSize: 14),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: Color(0xFF39FF14)),
-            ),
+            child: const Text('Cancel', style: TextStyle(color: _textSub)),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              foregroundColor: _white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: const Text('Delete'),
           ),
         ],
       ),
@@ -128,7 +178,6 @@ class _RoomScreenState extends State<RoomScreen> {
     }
   }
 
-  // Díplay member in room
   Future<void> _showRoomMembers() async {
     final members = await _roomService.getMembers(
       widget.user.token,
@@ -138,13 +187,18 @@ class _RoomScreenState extends State<RoomScreen> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF111711),
+        backgroundColor: _white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
           '${widget.room.name} — Members',
-          style: const TextStyle(color: Color(0xFF39FF14)),
+          style: const TextStyle(
+            color: _text,
+            fontWeight: FontWeight.w700,
+            fontSize: 16,
+          ),
         ),
         content: members.isEmpty
-            ? const Text('No members', style: TextStyle(color: Colors.white54))
+            ? const Text('No members yet', style: TextStyle(color: _textSub))
             : SizedBox(
                 width: double.maxFinite,
                 child: ListView.builder(
@@ -153,84 +207,106 @@ class _RoomScreenState extends State<RoomScreen> {
                   itemBuilder: (_, i) {
                     final m = members[i];
                     final role = m['role'] ?? '';
-                    return ListTile(
-                      leading: Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: role == 'owner'
-                                ? const Color(0xFFFFD600)
-                                : const Color(0xFF3a3a3a),
-                          ),
-                          borderRadius: BorderRadius.circular(4),
+                    final isOwner = role == 'owner';
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF9FAFB),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isOwner
+                              ? const Color(0xFFBFD3FF)
+                              : const Color(0xFFE5E7EB),
                         ),
-                        child: Center(
-                          child: Text(
-                            '${i + 1}',
-                            style: TextStyle(
-                              color: role == 'owner'
-                                  ? const Color(0xFFFFD600)
-                                  : Colors.white54,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: isOwner
+                                  ? const Color(0xFFEEF2FF)
+                                  : const Color(0xFFF3F4F6),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Center(
+                              child: Text(
+                                '${i + 1}',
+                                style: TextStyle(
+                                  color: isOwner ? _blue : _textSub,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
-                      ),
-                      title: Text(
-                        m['display_name'] ?? m['username'] ?? 'Unknown',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                        ),
-                      ),
-
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Badge Owner/Member
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  m['display_name'] ??
+                                      m['username'] ??
+                                      'Unknown',
+                                  style: const TextStyle(
+                                    color: _text,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
-                              vertical: 2,
+                              vertical: 3,
                             ),
                             decoration: BoxDecoration(
-                              border: Border.all(
-                                color: role == 'owner'
-                                    ? const Color(0xFFFFD600)
-                                    : const Color(0xFF3a3a3a),
-                              ),
-                              borderRadius: BorderRadius.circular(4),
+                              color: isOwner
+                                  ? const Color(0xFFEEF2FF)
+                                  : const Color(0xFFF3F4F6),
+                              borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
-                              role == 'owner' ? 'Owner' : 'Member',
+                              isOwner ? 'Owner' : 'Member',
                               style: TextStyle(
-                                color: role == 'owner'
-                                    ? const Color(0xFFFFD600)
-                                    : Colors.white54,
+                                color: isOwner ? _blue : _textSub,
                                 fontSize: 11,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
-                          // Kick other member in room (just for owner)
                           if (widget.room.role == 'owner' &&
                               role != 'owner') ...[
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 6),
                             GestureDetector(
                               onTap: () async {
                                 final confirm = await showDialog<bool>(
                                   context: context,
                                   builder: (_) => AlertDialog(
-                                    backgroundColor: const Color(0xFF111711),
+                                    backgroundColor: _white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
                                     title: const Text(
                                       'Kick Member',
-                                      style: TextStyle(color: Colors.red),
+                                      style: TextStyle(
+                                        color: Color(0xFFEF4444),
+                                        fontWeight: FontWeight.w700,
+                                      ),
                                     ),
                                     content: Text(
                                       'Remove "${m['display_name']}" from room?',
                                       style: const TextStyle(
-                                        color: Colors.white,
+                                        color: _textSub,
+                                        fontSize: 14,
                                       ),
                                     ),
                                     actions: [
@@ -239,18 +315,25 @@ class _RoomScreenState extends State<RoomScreen> {
                                             Navigator.pop(context, false),
                                         child: const Text(
                                           'Cancel',
-                                          style: TextStyle(
-                                            color: Color(0xFF39FF14),
-                                          ),
+                                          style: TextStyle(color: _textSub),
                                         ),
                                       ),
-                                      TextButton(
+                                      ElevatedButton(
                                         onPressed: () =>
                                             Navigator.pop(context, true),
-                                        child: const Text(
-                                          'Kick',
-                                          style: TextStyle(color: Colors.red),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(
+                                            0xFFEF4444,
+                                          ),
+                                          foregroundColor: _white,
+                                          elevation: 0,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                          ),
                                         ),
+                                        child: const Text('Kick'),
                                       ),
                                     ],
                                   ),
@@ -268,17 +351,18 @@ class _RoomScreenState extends State<RoomScreen> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 8,
-                                  vertical: 2,
+                                  vertical: 3,
                                 ),
                                 decoration: BoxDecoration(
-                                  border: Border.all(color: Colors.red),
-                                  borderRadius: BorderRadius.circular(4),
+                                  color: const Color(0xFFFEF2F2),
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: const Text(
                                   'Kick',
                                   style: TextStyle(
-                                    color: Colors.red,
+                                    color: Color(0xFFEF4444),
                                     fontSize: 11,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ),
@@ -291,35 +375,17 @@ class _RoomScreenState extends State<RoomScreen> {
                 ),
               ),
         actions: [
-          TextButton(
+          ElevatedButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Close',
-              style: TextStyle(color: Color(0xFF39FF14)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _blue,
+              foregroundColor: _white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showChannelMembers(Channel ch) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF111711),
-        title: Text(ch.name, style: const TextStyle(color: Color(0xFF39FF14))),
-        content: const Text(
-          'Channel members coming soon...',
-          style: TextStyle(color: Colors.white54),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Close',
-              style: TextStyle(color: Color(0xFF39FF14)),
-            ),
+            child: const Text('Close'),
           ),
         ],
       ),
@@ -328,185 +394,361 @@ class _RoomScreenState extends State<RoomScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isOwner = widget.room.role == 'owner';
+
     return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Color(0xFF39FF14)),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          widget.room.name,
-          style: const TextStyle(color: Color(0xFF39FF14)),
-        ),
-        actions: [
-          // Members button
-          TextButton(
-            onPressed: _showRoomMembers,
-            child: const Text(
-              'Members',
-              style: TextStyle(color: Color(0xFF39FF14), fontSize: 13),
-            ),
-          ),
-          TextButton(
-            onPressed: _loadChannels,
-            child: const Text(
-              'Refresh',
-              style: TextStyle(color: Color(0xFF39FF14), fontSize: 13),
-            ),
-          ),
-          if (widget.room.role == 'owner')
-            TextButton(
-              onPressed: _createChannel,
-              child: const Text(
-                'Add',
-                style: TextStyle(color: Color(0xFF39FF14), fontSize: 13),
-              ),
-            ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Broadcast button chỉ owner thấy
-          if (widget.room.role == 'owner')
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.all(16),
-              child: ElevatedButton(
-                onPressed: () {},
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF39FF14),
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: const Text(
-                  'BROADCAST TO ROOM',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
+      backgroundColor: _bg,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Header ──────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: _white,
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.06),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        size: 16,
+                        color: _text,
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.room.name,
+                          style: const TextStyle(
+                            color: _text,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 17,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        Text(
+                          isOwner ? 'You are the owner' : 'Member',
+                          style: TextStyle(
+                            color: isOwner ? _blue : _textSub,
+                            fontSize: 12,
+                            fontWeight: isOwner
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Members button
+                  GestureDetector(
+                    onTap: _showRoomMembers,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEEF2FF),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(
+                            Icons.people_outline_rounded,
+                            color: _blue,
+                            size: 16,
+                          ),
+                          SizedBox(width: 4),
+                          Text(
+                            'Members',
+                            style: TextStyle(
+                              color: _blue,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (isOwner) ...[
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: _createChannel,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _blue,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Text(
+                          '+ Add',
+                          style: TextStyle(
+                            color: _white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
 
-          Expanded(
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: Color(0xFF39FF14)),
-                  )
-                : _channels.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No channels yet',
-                      style: TextStyle(color: Colors.white54),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _channels.length,
-                    itemBuilder: (_, i) {
-                      final ch = _channels[i];
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: ch.isLocked
-                                ? Colors.red
-                                : const Color(0xFF1f2e1f),
-                            width: 1,
-                          ),
-                          borderRadius: BorderRadius.circular(8),
+            // ── Broadcast button (owner only) ────────
+            if (isOwner)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: GestureDetector(
+                  onTap: () {},
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF1A56DB), Color(0xFF3B82F6)],
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _blue.withOpacity(0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
                         ),
-                        child: ListTile(
-                          title: Text(
-                            ch.name,
-                            style: const TextStyle(color: Colors.white),
+                      ],
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.campaign_rounded, color: _white, size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          'Broadcast to Room',
+                          style: TextStyle(
+                            color: _white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                            letterSpacing: 0.3,
                           ),
-                          subtitle: Text(
-                            ch.isLocked ? 'Locked' : 'Active',
-                            style: TextStyle(
-                              color: ch.isLocked ? Colors.red : Colors.white54,
-                              fontSize: 12,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+            // ── Section title ────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+              child: Row(
+                children: [
+                  const Text(
+                    'Channels',
+                    style: TextStyle(
+                      color: _text,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 18,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (_channels.isNotEmpty)
+                    Text(
+                      '${_channels.length} channels',
+                      style: const TextStyle(color: _textSub, fontSize: 12),
+                    ),
+                ],
+              ),
+            ),
+
+            // ── Channel list ─────────────────────────
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator(color: _blue))
+                  : _channels.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFEEF2FF),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.volume_up_outlined,
+                              color: _blue,
+                              size: 36,
                             ),
                           ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (!ch.isLocked)
-                                GestureDetector(
-                                  onTap: () => _showChannelMembers(ch),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      border: Border.all(
-                                        color: const Color(0xFF39FF14),
-                                      ),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: const Text(
-                                      'Members',
-                                      style: TextStyle(
-                                        color: Color(0xFF39FF14),
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              if (ch.isLocked)
-                                const Icon(
-                                  Icons.lock,
-                                  color: Colors.red,
-                                  size: 16,
-                                ),
-                              if (widget.room.role == 'owner') ...[
-                                const SizedBox(width: 8),
-                                GestureDetector(
-                                  onTap: () => _deleteChannel(ch),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      border: Border.all(color: Colors.red),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: const Text(
-                                      'Delete',
-                                      style: TextStyle(
-                                        color: Colors.red,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
+                          const SizedBox(height: 16),
+                          const Text(
+                            'No channels yet',
+                            style: TextStyle(
+                              color: _text,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                            ),
                           ),
+                          const SizedBox(height: 6),
+                          if (isOwner)
+                            const Text(
+                              'Tap "+ Add" to create a channel',
+                              style: TextStyle(color: _textSub, fontSize: 13),
+                            ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      itemCount: _channels.length,
+                      itemBuilder: (_, i) {
+                        final ch = _channels[i];
+                        return GestureDetector(
                           onTap: ch.isLocked
                               ? null
-                              : () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => ChannelScreen(
-                                        user: widget.user,
-                                        room: widget.room,
-                                        channel: ch,
+                              : () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => ChannelScreen(
+                                      user: widget.user,
+                                      room: widget.room,
+                                      channel: ch,
+                                    ),
+                                  ),
+                                ),
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: ch.isLocked
+                                  ? const Color(0xFFFEF2F2)
+                                  : _white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: ch.isLocked
+                                    ? const Color(0xFFFECACA)
+                                    : const Color(0xFFE5E7EB),
+                              ),
+                              boxShadow: ch.isLocked
+                                  ? []
+                                  : [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.04),
+                                        blurRadius: 12,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: ch.isLocked
+                                        ? const Color(0xFFFEF2F2)
+                                        : const Color(0xFFEEF2FF),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Icon(
+                                    ch.isLocked
+                                        ? Icons.lock_rounded
+                                        : Icons.volume_up_rounded,
+                                    color: ch.isLocked
+                                        ? const Color(0xFFEF4444)
+                                        : _blue,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        ch.name,
+                                        style: TextStyle(
+                                          color: ch.isLocked
+                                              ? const Color(0xFFEF4444)
+                                              : _text,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        ch.isLocked ? 'Locked' : 'Tap to enter',
+                                        style: TextStyle(
+                                          color: ch.isLocked
+                                              ? const Color(0xFFEF4444)
+                                              : _textSub,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (isOwner)
+                                  GestureDetector(
+                                    onTap: () => _deleteChannel(ch),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFEF2F2),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Text(
+                                        'Delete',
+                                        style: TextStyle(
+                                          color: Color(0xFFEF4444),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
                                     ),
-                                  );
-                                },
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
+                                  )
+                                else
+                                  const Icon(
+                                    Icons.arrow_forward_ios_rounded,
+                                    size: 14,
+                                    color: _textSub,
+                                  ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }

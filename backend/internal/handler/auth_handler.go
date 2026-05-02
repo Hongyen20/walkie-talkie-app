@@ -56,10 +56,6 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "Display name is required"})
 		return
 	}
-	if !isValidName(body.DisplayName) {
-		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "Display name must not contain special characters"})
-		return
-	}
 
 	if body.Password == "" {
 		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "Password is required"})
