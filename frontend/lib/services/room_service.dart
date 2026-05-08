@@ -151,4 +151,38 @@ class RoomService {
     );
     return res.statusCode == 200;
   }
+
+  Future<bool> addChannelMember(
+    String token,
+    String roomId,
+    String channelId,
+    String userId,
+  ) async {
+    final res = await http.post(
+      Uri.parse(
+        '${Constants.baseUrl}/rooms/$roomId/channels/$channelId/members',
+      ),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({'user_id': userId}),
+    );
+    return res.statusCode == 200;
+  }
+
+  Future<bool> removeChannelMember(
+    String token,
+    String roomId,
+    String channelId,
+    String userId,
+  ) async {
+    final res = await http.delete(
+      Uri.parse(
+        '${Constants.baseUrl}/rooms/$roomId/channels/$channelId/members/$userId',
+      ),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return res.statusCode == 200;
+  }
 }

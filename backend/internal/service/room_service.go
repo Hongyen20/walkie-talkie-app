@@ -167,3 +167,24 @@ func (s *RoomService) LeaveRoom(ctx context.Context, roomID, userID primitive.Ob
 func (s *RoomService) GetMembers(ctx context.Context, roomID primitive.ObjectID) ([]model.MemberInfo, error) {
 	return s.roomRepo.GetMembersWithInfo(ctx, s.db, roomID)
 }
+
+func (s *RoomService) GetMemberRole(ctx context.Context, roomID, userID primitive.ObjectID) (string, error) {
+    return s.roomRepo.GetMemberRole(ctx, roomID, userID)
+}
+
+func (s *RoomService) GetChannelsForUser(ctx context.Context, roomID, userID primitive.ObjectID, isOwner bool) ([]model.Channel, error) {
+    if isOwner {
+        // Owner see all channel
+        return s.channelRepo.FindByRoom(ctx, roomID)
+    }
+    // Member just see the channel was add
+    return s.channelRepo.FindByRoomAndMember(ctx, roomID, userID)
+}
+
+func (s *RoomService) AddChannelMember(ctx context.Context, channelID, userID primitive.ObjectID) error {
+    return s.channelRepo.AddMember(ctx, channelID, userID)
+}
+
+func (s *RoomService) RemoveChannelMember(ctx context.Context, channelID, userID primitive.ObjectID) error {
+    return s.channelRepo.RemoveMember(ctx, channelID, userID)
+}

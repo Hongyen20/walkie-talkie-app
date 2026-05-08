@@ -80,3 +80,19 @@ func (r *ChannelRepository) DeleteChannel(ctx context.Context, channelID primiti
 	_, err := r.col.DeleteOne(ctx, bson.M{"_id": channelID})
 	return err
 }
+
+func (r *ChannelRepository) FindByRoomAndMember(ctx context.Context, roomID, userID primitive.ObjectID)([]model.Channel, error){
+	cursor, err := r.col.Find(ctx, bson.M{
+		"room_id": roomID,
+		"members": userID,
+	})
+	if err != nil{
+		return []model.Channel{}, nil
+	}
+	var channels []model.Channel
+	cursor.All(ctx, &channels)
+	if channels == nil{
+		return []model.Channel{}, nil
+	}
+	return channels, nil
+}

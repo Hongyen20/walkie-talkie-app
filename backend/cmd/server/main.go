@@ -76,7 +76,7 @@ func main() {
 	mux.HandleFunc("/rooms/join", middleware.AuthMiddleware(authService, roomHandler.JoinRoom))
 
 	mux.HandleFunc("/rooms/", middleware.AuthMiddleware(authService, func(w http.ResponseWriter, r *http.Request) {
-		parts := strings.Split(r.URL.Path, "/")
+		parts := strings.Split(strings.TrimSuffix(r.URL.Path, "/"), "/")
 
 		if strings.HasSuffix(r.URL.Path, "/channels") {
 			if r.Method == "GET" {
@@ -84,15 +84,23 @@ func main() {
 			} else if r.Method == "POST" {
 				roomHandler.CreateChannel(w, r)
 			}
+		} else if strings.HasSuffix(r.URL.Path, "/leave") {
+			if r.Method == "DELETE" {
+				roomHandler.LeaveRoom(w, r)
+			}
+		} else if len(parts) == 6 && parts[3] == "channels" && parts[5] == "members" {
+			if r.Method == "POST" {
+				roomHandler.AddChannelMember(w, r)
+			}
+		} else if len(parts) == 7 && parts[3] == "channels" && parts[5] == "members" {
+			if r.Method == "DELETE" {
+				roomHandler.RemoveChannelMember(w, r)
+			}
 		} else if strings.HasSuffix(r.URL.Path, "/members") {
 			if r.Method == "GET" {
 				roomHandler.GetMembers(w, r)
 			} else if r.Method == "POST" {
 				roomHandler.AddMember(w, r)
-			}
-		} else if strings.HasSuffix(r.URL.Path, "/leave") {
-			if r.Method == "DELETE" {
-				roomHandler.LeaveRoom(w, r)
 			}
 		} else if len(parts) == 5 && parts[3] == "channels" {
 			if r.Method == "DELETE" {

@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"walkie-talkie-app/internal/middleware"
@@ -178,7 +179,10 @@ func (h *RoomHandler) GetChannels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	channels, err := h.roomService.GetChannels(r.Context(), roomID)
+	//Owner can see all channel
+	//Member just see the channel owner add
+	role, _ := h.roomService.GetMemberRole(r.Context(), roomID, userID)
+	channels, err := h.roomService.GetChannelsForUser(r.Context(), roomID, userID, role == "owner")
 	if err != nil {
 		WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -306,4 +310,76 @@ func (h *RoomHandler) KickMember(w http.ResponseWriter, r *http.Request) {
 	}
 	WriteJSON(w, http.StatusOK, map[string]string{"message": "member kicked"})
 
+}
+
+// POST /rooms/:roomId/channels/:channelId/members
+func (h *RoomHandler) AddChannelMember(w http.ResponseWriter, r *http.Request) {
+	ownerID, err := getUserID(r)
+	if err != nil {
+		WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthozied"})
+		return
+	}
+	parts := strings.Split(r.URL.Path, "/")
+	fmt.Printf("[DEBUG] parts=%v\n", parts)
+	// /rooms/:roomId/channels/:channelId/members
+	// parts = ["", "rooms", ":roomId", "channels", ":channelId", "members"]
+	roomID, _ := primitive.ObjectIDFromHex(parts[2])
+	channelID, err := primitive.ObjectIDFromHex(parts[4])
+	if err != nil {
+		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid channelID"})
+		return
+	}
+
+	//Just owner add user into channel
+	role, _ := h.roomService.GetMemberRole(r.Context(), roomID, ownerID)
+	if role != "owner" {
+		WriteJSON(w, http.StatusForbidden, map[string]string{"error": "Only owner can add members"})
+		return
+	}
+
+	var body struct {
+		UserID string `json:"user_id"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+	targetID, err := primitive.ObjectIDFromHex(body.UserID)
+	if err != nil {
+		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid user_id"})
+		return
+	}
+
+	if err := h.roomService.AddChannelMember(r.Context(), channelID, targetID); err != nil {
+		WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]string{"message": "member added to channel"})
+
+}
+
+// DELETE /rooms/:roomId/channels/:channelId/members/:userId
+func (h *RoomHandler) RemoveChannelMember(w http.ResponseWriter, r *http.Request) {
+	ownerID, err := getUserID(r)
+	if err != nil {
+		WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	parts := strings.Split(r.URL.Path, "/")
+	roomID, _ := primitive.ObjectIDFromHex(parts[2])
+	channelID, _ := primitive.ObjectIDFromHex(parts[4])
+	targetID, err := primitive.ObjectIDFromHex(parts[6])
+	if err != nil {
+		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid user_id"})
+		return
+	}
+
+	role, _ := h.roomService.GetMemberRole(r.Context(), roomID, ownerID)
+	if role != "owner" {
+		WriteJSON(w, http.StatusForbidden, map[string]string{"error": "only owner can remove members"})
+		return
+	}
+
+	if err := h.roomService.RemoveChannelMember(r.Context(), channelID, targetID); err != nil {
+		WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]string{"message": "member removed from channel"})
 }
