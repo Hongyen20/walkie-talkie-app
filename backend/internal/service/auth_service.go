@@ -10,6 +10,8 @@ import (
 	"walkie-talkie-app/internal/repository"
 
 	"github.com/golang-jwt/jwt/v5"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -42,7 +44,6 @@ func (s *AuthService) Register(ctx context.Context, username, password, displayN
 	return user, nil
 }
 
-
 // Login
 func (s *AuthService) Login(ctx context.Context, username, password string) (string, *model.User, error) {
 	user, err := s.userRepo.FindByUserName(ctx, username)
@@ -59,6 +60,38 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (str
 		return "", nil, err
 	}
 	return token, user, nil
+}
+
+// UpdateProfile — đổi display_name và/hoặc password
+func (s *AuthService) UpdateProfile(ctx context.Context, userID primitive.ObjectID, displayName, newPassword string) error {
+	fields := bson.M{}
+
+	if displayName != "" {
+		fields["display_name"] = displayName
+	}
+	if newPassword != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+		if err != nil {
+			return err
+		}
+		fields["password"] = string(hash)
+	}
+	if len(fields) == 0 {
+		return errors.New("nothing to update")
+	}
+	return s.userRepo.UpdateProfile(ctx, userID, fields)
+}
+
+// DeleteAccount — xóa tài khoản
+func (s *AuthService) DeleteAccount(ctx context.Context, userID primitive.ObjectID, password string) error {
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return errors.New("user not found")
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+		return errors.New("incorrect password")
+	}
+	return s.userRepo.DeleteByID(ctx, userID)
 }
 
 // Verify JWT

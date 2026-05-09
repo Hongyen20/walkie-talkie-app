@@ -25,36 +25,87 @@ class AuthService {
 
   Future<Map<String, dynamic>> login(String username, String password) async {
     if (username.isEmpty) {
-        return {'error': 'Please enter username'};
+      return {'error': 'Please enter username'};
     }
     if (password.isEmpty) {
-        return {'error': 'Please enter password'};
+      return {'error': 'Please enter password'};
     }
-
     final res = await http.post(
-        Uri.parse('${Constants.baseUrl}/auth/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'username': username, 'password': password}),
+      Uri.parse('${Constants.baseUrl}/auth/login'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'username': username, 'password': password}),
     );
-
     final data = jsonDecode(res.body);
     if (res.statusCode == 200) {
-        await saveToken(data['token']);
-        return {'user': User.fromJson(data, data['token'])};
+      await saveToken(data['token']);
+      return {'user': User.fromJson(data, data['token'])};
     }
     return {'error': data['error']};
-}
+  }
 
-Future<Map<String, dynamic>> register(String username, String password, String displayName) async {
+  Future<Map<String, dynamic>> register(
+    String username,
+    String password,
+    String displayName,
+  ) async {
     final res = await http.post(
-        Uri.parse('${Constants.baseUrl}/auth/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-            'username': username,
-            'password': password,
-            'display_name': displayName,
-        }),
+      Uri.parse('${Constants.baseUrl}/auth/register'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'username': username,
+        'password': password,
+        'display_name': displayName,
+      }),
     );
     return jsonDecode(res.body);
-}
+  }
+
+  // Update display name and/or password
+  Future<Map<String, dynamic>> updateProfile(
+    String token, {
+    String? displayName,
+    String? newPassword,
+  }) async {
+    final body = <String, String>{};
+    if (displayName != null && displayName.isNotEmpty) {
+      body['display_name'] = displayName;
+    }
+    if (newPassword != null && newPassword.isNotEmpty) {
+      body['new_password'] = newPassword;
+    }
+    final res = await http.put(
+      Uri.parse('${Constants.baseUrl}/auth/profile'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(body),
+    );
+    final data = jsonDecode(res.body);
+    if (res.statusCode == 200) {
+      return {'message': data['message']};
+    }
+    return {'error': data['error']};
+  }
+
+  // Delete account — requires password confirmation
+  Future<Map<String, dynamic>> deleteAccount(
+    String token,
+    String password,
+  ) async {
+    final res = await http.delete(
+      Uri.parse('${Constants.baseUrl}/auth/profile'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({'password': password}),
+    );
+    final data = jsonDecode(res.body);
+    if (res.statusCode == 200) {
+      await clearToken();
+      return {'message': data['message']};
+    }
+    return {'error': data['error']};
+  }
 }

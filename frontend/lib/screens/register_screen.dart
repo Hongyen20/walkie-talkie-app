@@ -209,7 +209,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     _buildField(
                       label: 'Password',
                       controller: _passwordController,
-                      hint: 'Min. 8 characters',
+                      hint: 'Min 8 characters',
                       icon: Icons.lock_outline_rounded,
                       obscure: _obscurePassword,
                       showToggle: true,

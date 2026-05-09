@@ -55,6 +55,15 @@ func main() {
 	// Auth routes
 	mux.HandleFunc("/auth/register", authHandler.Register)
 	mux.HandleFunc("/auth/login", authHandler.Login)
+	mux.HandleFunc("/auth/profile", middleware.AuthMiddleware(authService, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			authHandler.UpdateProfile(w, r)
+		} else if r.Method == http.MethodDelete {
+			authHandler.DeleteAccount(w, r)
+		} else {
+			handler.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		}
+	}))
 
 	mux.HandleFunc("/profile", middleware.AuthMiddleware(authService, func(w http.ResponseWriter, r *http.Request) {
 		claims := r.Context().Value(middleware.UserKey)

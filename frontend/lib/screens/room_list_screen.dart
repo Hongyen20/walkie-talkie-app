@@ -3,7 +3,10 @@ import 'package:flutter/services.dart';
 import '../models/user.dart';
 import '../models/room.dart';
 import '../services/room_service.dart';
+import '../services/auth_service.dart';
 import 'room_screen.dart';
+import 'profile_screen.dart';
+import 'login_screen.dart';
 
 class RoomListScreen extends StatefulWidget {
   final User user;
@@ -17,6 +20,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
   final _roomService = RoomService();
   List<Room> _rooms = [];
   bool _isLoading = true;
+  late User _currentUser;
 
   // ── Colors ──────────────────────────────────────
   static const _bg = Color(0xFFF0F4FF);
@@ -29,13 +33,14 @@ class _RoomListScreenState extends State<RoomListScreen> {
   @override
   void initState() {
     super.initState();
+    _currentUser = widget.user;
     _loadRooms();
   }
 
   Future<void> _loadRooms() async {
     setState(() => _isLoading = true);
     try {
-      final rooms = await _roomService.getRooms(widget.user.token);
+      final rooms = await _roomService.getRooms(_currentUser.token);
       setState(() {
         _rooms = rooms;
         _isLoading = false;
@@ -53,6 +58,28 @@ class _RoomListScreenState extends State<RoomListScreen> {
         backgroundColor: isError ? const Color(0xFFEF4444) : _blue,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  void _goToProfile() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProfileScreen(
+          user: _currentUser,
+          onLogout: () async {
+            await AuthService().clearToken();
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
+              (_) => false,
+            );
+          },
+          onProfileUpdated: (updatedUser) {
+            setState(() => _currentUser = updatedUser);
+          },
+        ),
       ),
     );
   }
@@ -108,7 +135,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
             onPressed: () async {
               if (nameController.text.trim().isEmpty) return;
               await _roomService.createRoom(
-                widget.user.token,
+                _currentUser.token,
                 nameController.text.trim(),
               );
               Navigator.pop(context);
@@ -201,7 +228,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
               onPressed: () async {
                 if (codeController.text.trim().isEmpty) return;
                 final result = await _roomService.joinRoom(
-                  widget.user.token,
+                  _currentUser.token,
                   codeController.text.trim(),
                 );
                 if (result['room'] != null) {
@@ -236,7 +263,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
       isDestructive: true,
     );
     if (confirm == true) {
-      await _roomService.deleteRoom(widget.user.token, room.id);
+      await _roomService.deleteRoom(_currentUser.token, room.id);
       _loadRooms();
     }
   }
@@ -249,7 +276,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
       isDestructive: true,
     );
     if (confirm == true) {
-      await _roomService.leaveRoom(widget.user.token, room.id);
+      await _roomService.leaveRoom(_currentUser.token, room.id);
       _loadRooms();
     }
   }
@@ -312,31 +339,52 @@ class _RoomListScreenState extends State<RoomListScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               child: Row(
                 children: [
-                  // Avatar
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: _blue,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  // Avatar + username — nhấn để vào Profile
+                  GestureDetector(
+                    onTap: _goToProfile,
+                    child: Row(
                       children: [
-                        Text(
-                          widget.user.username,
-                          style: const TextStyle(
-                            color: _text,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 15,
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: _blue,
+                            borderRadius: BorderRadius.circular(12),
                           ),
+                          child: Center(
+                            child: Text(
+                              _currentUser.displayName.isNotEmpty
+                                  ? _currentUser.displayName[0].toUpperCase()
+                                  : _currentUser.username[0].toUpperCase(),
+                              style: const TextStyle(
+                                color: _white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _currentUser.displayName.isNotEmpty
+                                  ? _currentUser.displayName
+                                  : _currentUser.username,
+                              style: const TextStyle(
+                                color: _text,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 15,
+                              ),
+                            ),
+                            
+                          ],
                         ),
                       ],
                     ),
                   ),
+                  const Spacer(),
                   // Join button
                   GestureDetector(
                     onTap: _joinRoom,
@@ -436,8 +484,8 @@ class _RoomListScreenState extends State<RoomListScreen> {
                         children: [
                           Container(
                             padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFEEF2FF),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFEEF2FF),
                               shape: BoxShape.circle,
                             ),
                             child: const Icon(
@@ -474,7 +522,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
                             context,
                             MaterialPageRoute(
                               builder: (_) =>
-                                  RoomScreen(user: widget.user, room: room),
+                                  RoomScreen(user: _currentUser, room: room),
                             ),
                           ).then((_) => _loadRooms()),
                           child: Container(

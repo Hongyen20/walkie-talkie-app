@@ -60,3 +60,13 @@ func (r *UserRepository) FindByID(ctx context.Context, id primitive.ObjectID) (*
 	}
 	return &user, nil
 }
+
+func (r *UserRepository) UpdateProfile(ctx context.Context, id primitive.ObjectID, fields bson.M) error {
+	_, err := r.col.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": fields})
+	return err
+}
+
+func (r *UserRepository) DeleteByID(ctx context.Context, id primitive.ObjectID) error {
+	_, err := r.col.DeleteOne(ctx, bson.M{"_id": id})
+	return err
+}
