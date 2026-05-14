@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"walkie-talkie-app/internal/middleware"
 	"walkie-talkie-app/internal/sfu"
@@ -21,7 +22,6 @@ func NewSFUHandler(manager *sfu.Manager, notifyFunc func(string, map[string]inte
 	return &SFUHandler{manager: manager, notifyFunc: notifyFunc}
 }
 
-// *jwt.MapClaims
 func getUsernameFromContext(r *http.Request) (string, bool) {
 	claims, ok := r.Context().Value(middleware.UserKey).(*jwt.MapClaims)
 	if !ok {
@@ -33,12 +33,22 @@ func getUsernameFromContext(r *http.Request) (string, bool) {
 	return username, ok
 }
 
-// POST /sfu/offer?room_id=xxx&channel_id=xxx
+// resolvePeerID: dùng peer_id từ query nếu có, fallback về username
+// Dùng để broadcast có thể dùng "username_broadcast" thay vì "username"
+// tránh conflict với PTT peer connection đang tồn tại
+func resolvePeerID(r *http.Request, username string) string {
+	peerID := r.URL.Query().Get("peer_id")
+	if peerID != "" {
+		return peerID
+	}
+	return username
+}
+
+// POST /sfu/offer?room_id=xxx&channel_id=xxx[&peer_id=xxx]
 func (h *SFUHandler) HandleOffer(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[SFU] HandleOffer - Authorization: %s\n", r.Header.Get("Authorization"))
 
 	username, ok := getUsernameFromContext(r)
-	log.Printf("[SFU] username=%s ok=%v\n", username, ok)
 	if !ok {
 		WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
@@ -55,6 +65,9 @@ func (h *SFUHandler) HandleOffer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	peerID := resolvePeerID(r, username)
+	log.Printf("[SFU] HandleOffer username=%s peerID=%s\n", username, peerID)
+
 	var body struct {
 		SDP string `json:"sdp"`
 	}
@@ -66,19 +79,22 @@ func (h *SFUHandler) HandleOffer(w http.ResponseWriter, r *http.Request) {
 	roomKey := roomID + "_" + channelID
 	sfuRoom := h.manager.GetOrCreateRoom(roomKey)
 
-	//Setup renegotiation callback
 	if sfuRoom.OnRenegotiate == nil {
-		sfuRoom.OnRenegotiate = func(peerID string, sdp string) {
-			log.Printf("[SFU] Sending renegotiate to %s\n", peerID)
+		sfuRoom.OnRenegotiate = func(pid string, sdp string) {
+			log.Printf("[SFU] Sending renegotiate to %s\n", pid)
 			if h.notifyFunc != nil {
-				h.notifyFunc(peerID, map[string]interface{}{
+				// peerID có thể là "username_broadcast" — strip suffix để tìm đúng WS client
+				wsTarget := strings.TrimSuffix(pid, "_broadcast")
+				log.Printf("[SFU] Renegotiate WS target: %s (from peerID: %s)\n", wsTarget, pid)
+				h.notifyFunc(wsTarget, map[string]interface{}{
 					"type":    "sfu-renegotiate",
 					"message": sdp,
 				})
 			}
 		}
 	}
-	answerSDP, err := sfuRoom.HandleOffer(username, body.SDP)
+
+	answerSDP, err := sfuRoom.HandleOffer(peerID, body.SDP)
 	if err != nil {
 		WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -90,7 +106,7 @@ func (h *SFUHandler) HandleOffer(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// POST /sfu/ice?room_id=xxx&channel_id=xxx
+// POST /sfu/ice?room_id=xxx&channel_id=xxx[&peer_id=xxx]
 func (h *SFUHandler) HandleICE(w http.ResponseWriter, r *http.Request) {
 	username, ok := getUsernameFromContext(r)
 	if !ok {
@@ -100,6 +116,7 @@ func (h *SFUHandler) HandleICE(w http.ResponseWriter, r *http.Request) {
 
 	roomID := r.URL.Query().Get("room_id")
 	channelID := r.URL.Query().Get("channel_id")
+	peerID := resolvePeerID(r, username)
 
 	var body struct {
 		Candidate     string `json:"candidate"`
@@ -113,7 +130,7 @@ func (h *SFUHandler) HandleICE(w http.ResponseWriter, r *http.Request) {
 
 	roomKey := roomID + "_" + channelID
 	sfuRoom := h.manager.GetOrCreateRoom(roomKey)
-	sfuRoom.AddICECandidate(username, webrtc.ICECandidateInit{
+	sfuRoom.AddICECandidate(peerID, webrtc.ICECandidateInit{
 		Candidate:     body.Candidate,
 		SDPMid:        &body.SDPMid,
 		SDPMLineIndex: &body.SDPMLineIndex,
@@ -122,7 +139,7 @@ func (h *SFUHandler) HandleICE(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, map[string]string{"message": "ok"})
 }
 
-// DELETE /sfu/leave?room_id=xxx&channel_id=xxx
+// DELETE /sfu/leave?room_id=xxx&channel_id=xxx[&peer_id=xxx]
 func (h *SFUHandler) HandleLeave(w http.ResponseWriter, r *http.Request) {
 	username, ok := getUsernameFromContext(r)
 	if !ok {
@@ -132,25 +149,27 @@ func (h *SFUHandler) HandleLeave(w http.ResponseWriter, r *http.Request) {
 
 	roomID := r.URL.Query().Get("room_id")
 	channelID := r.URL.Query().Get("channel_id")
+	peerID := resolvePeerID(r, username)
 	roomKey := roomID + "_" + channelID
 
 	sfuRoom := h.manager.GetOrCreateRoom(roomKey)
-	sfuRoom.RemovePeer(username)
+	sfuRoom.RemovePeer(peerID)
 	h.manager.CleanIfEmpty(roomKey)
 
 	WriteJSON(w, http.StatusOK, map[string]string{"message": "left"})
 }
 
-// POST /sfu/renegotiate
-
+// POST /sfu/renegotiate?room_id=xxx&channel_id=xxx[&peer_id=xxx]
 func (h *SFUHandler) HandleRenegotiate(w http.ResponseWriter, r *http.Request) {
 	username, ok := getUsernameFromContext(r)
 	if !ok {
-		WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthozied"})
+		WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
+
 	roomID := r.URL.Query().Get("room_id")
 	channelID := r.URL.Query().Get("channel_id")
+	peerID := resolvePeerID(r, username)
 
 	var body struct {
 		SDP string `json:"sdp"`
@@ -163,7 +182,7 @@ func (h *SFUHandler) HandleRenegotiate(w http.ResponseWriter, r *http.Request) {
 	roomKey := roomID + "_" + channelID
 	sfuRoom := h.manager.GetOrCreateRoom(roomKey)
 
-	peer, exists := sfuRoom.GetPeer(username)
+	peer, exists := sfuRoom.GetPeer(peerID)
 	if !exists {
 		WriteJSON(w, http.StatusNotFound, map[string]string{"error": "peer not found"})
 		return

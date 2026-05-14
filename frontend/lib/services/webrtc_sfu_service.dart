@@ -10,6 +10,7 @@ class WebRTCSFUService {
   String? _roomId;
   String? _channelId;
   String? _token;
+  String? _peerId; // custom peer id (dùng cho broadcast)
 
   Function(String)? onStatusChange;
 
@@ -31,10 +32,18 @@ class WebRTCSFUService {
     }
   }
 
-  Future<bool> connect(String token, String roomId, String channelId) async {
+  // peerId: nếu null thì server dùng username từ JWT
+  // Truyền peerId = "username_broadcast" khi broadcast để tránh conflict
+  Future<bool> connect(
+    String token,
+    String roomId,
+    String channelId, {
+    String? peerId,
+  }) async {
     _token = token;
     _roomId = roomId;
     _channelId = channelId;
+    _peerId = peerId;
 
     try {
       final config = web.RTCConfiguration(
@@ -77,11 +86,16 @@ class WebRTCSFUService {
           )
           .toDart;
 
+      // Build URL — thêm peer_id nếu có
+      var offerUrl =
+          '${Constants.baseUrl}/sfu/offer?room_id=$roomId&channel_id=$channelId';
+      if (peerId != null && peerId.isNotEmpty) {
+        offerUrl += '&peer_id=$peerId';
+      }
+
       // Send offer to server
       final res = await http.post(
-        Uri.parse(
-          '${Constants.baseUrl}/sfu/offer?room_id=$roomId&channel_id=$channelId',
-        ),
+        Uri.parse(offerUrl),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -102,7 +116,7 @@ class WebRTCSFUService {
           )
           .toDart;
 
-      print('[SFU] Connected to SFU server');
+      print('[SFU] Connected to SFU server (peerId: ${peerId ?? "default"})');
       return true;
     } catch (e) {
       print('[SFU] Connect error: $e');
@@ -123,10 +137,14 @@ class WebRTCSFUService {
   Future<void> disconnect() async {
     if (_token != null && _roomId != null && _channelId != null) {
       try {
+        // Nếu có peerId riêng thì báo server xóa đúng peer đó
+        var leaveUrl =
+            '${Constants.baseUrl}/sfu/leave?room_id=$_roomId&channel_id=$_channelId';
+        if (_peerId != null && _peerId!.isNotEmpty) {
+          leaveUrl += '&peer_id=$_peerId';
+        }
         await http.delete(
-          Uri.parse(
-            '${Constants.baseUrl}/sfu/leave?room_id=$_roomId&channel_id=$_channelId',
-          ),
+          Uri.parse(leaveUrl),
           headers: {'Authorization': 'Bearer $_token'},
         );
       } catch (e) {
@@ -148,10 +166,9 @@ class WebRTCSFUService {
         }
       }
     }
-    print('[SFU] Disconnected');
+    print('[SFU] Disconnected (peerId: ${_peerId ?? "default"})');
   }
 
-  // ✅ Handle renegotiation offer from server — only one definition
   Future<void> handleRenegotiate(String offerSdp) async {
     if (_pc == null || _token == null) return;
     print('[SFU] Handling renegotiation offer from server');
@@ -175,11 +192,14 @@ class WebRTCSFUService {
           )
           .toDart;
 
-      // Send answer back to server
+      var renegUrl =
+          '${Constants.baseUrl}/sfu/renegotiate?room_id=$_roomId&channel_id=$_channelId';
+      if (_peerId != null && _peerId!.isNotEmpty) {
+        renegUrl += '&peer_id=$_peerId';
+      }
+
       final res = await http.post(
-        Uri.parse(
-          '${Constants.baseUrl}/sfu/renegotiate?room_id=$_roomId&channel_id=$_channelId',
-        ),
+        Uri.parse(renegUrl),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $_token',

@@ -28,7 +28,7 @@ var manager = room.NewRoomManager()
 var Manager = manager
 
 func GetManager() *room.RoomManager {
-    return manager
+	return manager
 }
 
 type Message struct {
@@ -95,6 +95,9 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 			http.Error(w, `{"error","channel is locked"}`, http.StatusForbidden)
 			return
 		}
+
+		// Check if user is owner of room
+		isOwner := roomRepo.IsOwner(r.Context(), roomID, userID)
 
 		//Upgrade to WebSocket
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -188,10 +191,31 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 			case "chat":
 				jsonMsg, _ := json.Marshal(incoming)
 				wsRoom.BroadcastToChannel(client, channelIDStr, jsonMsg)
+
 			case "ptt-start", "ptt-stop":
 				// Broadcast in channel để mọi người biết ai đang nói
 				jsonMsg, _ := json.Marshal(incoming)
 				wsRoom.BroadcastToChannel(client, channelIDStr, jsonMsg)
+
+			case "broadcast-start":
+				// Owner broadcast PTT to ALL channels in room
+				if !isOwner {
+					log.Printf("[WARN] %s is not owner, broadcast rejected\n", username)
+					continue
+				}
+				jsonMsg, _ := json.Marshal(incoming)
+				wsRoom.BroadcastToRoom(client, jsonMsg)
+				log.Printf("[BROADCAST] %s started broadcasting to entire room\n", username)
+
+			case "broadcast-stop":
+				// Owner stop broadcast
+				if !isOwner {
+					continue
+				}
+				jsonMsg, _ := json.Marshal(incoming)
+				wsRoom.BroadcastToRoom(client, jsonMsg)
+				log.Printf("[BROADCAST] %s stopped broadcasting\n", username)
+
 			default:
 				log.Printf("[WARN]Unknown type: %s\n", incoming.Type)
 			}

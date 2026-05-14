@@ -3,6 +3,8 @@ import '../models/user.dart';
 import '../models/room.dart';
 import '../models/channel.dart';
 import '../services/room_service.dart';
+import '../services/websocket_service.dart';
+import '../services/webrtc_sfu_service.dart';
 import 'channel_screen.dart';
 
 class RoomScreen extends StatefulWidget {
@@ -20,6 +22,12 @@ class _RoomScreenState extends State<RoomScreen> {
   List<Channel> _channels = [];
   bool _isLoading = true;
 
+  // Broadcast — 1 WS + nhiều SFU (1 per channel)
+  WebSocketService? _broadcastWs;
+  final List<WebRTCSFUService> _broadcastSfuList = [];
+  bool _isBroadcasting = false;
+  bool _broadcastReady = false;
+
   static const _bg = Color(0xFFF0F4FF);
   static const _blue = Color(0xFF1A56DB);
   static const _white = Colors.white;
@@ -32,6 +40,20 @@ class _RoomScreenState extends State<RoomScreen> {
     _loadChannels();
   }
 
+  @override
+  void dispose() {
+    _teardownBroadcast();
+    super.dispose();
+  }
+
+  Future<void> _teardownBroadcast() async {
+    _broadcastWs?.disconnect();
+    for (final sfu in _broadcastSfuList) {
+      await sfu.disconnect();
+    }
+    _broadcastSfuList.clear();
+  }
+
   Future<void> _loadChannels() async {
     setState(() => _isLoading = true);
     final channels = await _roomService.getChannels(
@@ -42,6 +64,87 @@ class _RoomScreenState extends State<RoomScreen> {
       _channels = channels;
       _isLoading = false;
     });
+    if (widget.room.role == 'owner') {
+      await _teardownBroadcast();
+      await _initBroadcast();
+    }
+  }
+
+  // Kết nối SFU vào TẤT CẢ channels trong room
+  Future<void> _initBroadcast() async {
+    if (_channels.isEmpty) return;
+
+    // peerId riêng cho broadcast — tránh conflict với PTT peer của Owner
+    final broadcastPeerId = '${widget.user.username}_broadcast';
+
+    // Khởi tạo mic 1 lần bằng SFU đầu tiên
+    final firstSfu = WebRTCSFUService();
+    final micOk = await firstSfu.initLocalStream();
+    if (!micOk) {
+      _showSnack('Microphone access denied', isError: true);
+      return;
+    }
+
+    // Kết nối SFU đầu tiên với peerId riêng
+    final firstConnected = await firstSfu.connect(
+      widget.user.token,
+      widget.room.id,
+      _channels[0].id,
+      peerId: broadcastPeerId,
+    );
+    if (!firstConnected) {
+      _showSnack('SFU connection failed', isError: true);
+      return;
+    }
+    _broadcastSfuList.add(firstSfu);
+
+    // Kết nối SFU cho các channel còn lại với cùng peerId riêng
+    for (int i = 1; i < _channels.length; i++) {
+      final sfu = WebRTCSFUService();
+      await sfu.initLocalStream();
+      final connected = await sfu.connect(
+        widget.user.token,
+        widget.room.id,
+        _channels[i].id,
+        peerId: broadcastPeerId,
+      );
+      if (connected) {
+        _broadcastSfuList.add(sfu);
+        print('[BROADCAST] Connected to channel: ${_channels[i].name}');
+      }
+    }
+
+    // WS dùng channel đầu tiên để gửi broadcast-start/stop signal
+    _broadcastWs = WebSocketService();
+    _broadcastWs!.connect(widget.user.token, widget.room.id, _channels[0].id);
+
+    setState(() => _broadcastReady = _broadcastSfuList.isNotEmpty);
+    print(
+      '[BROADCAST] Ready — connected to ${_broadcastSfuList.length}/${_channels.length} channels',
+    );
+  }
+
+  void _startBroadcast() {
+    if (!_broadcastReady || _broadcastSfuList.isEmpty) {
+      _showSnack('Microphone not ready', isError: true);
+      return;
+    }
+    setState(() => _isBroadcasting = true);
+    // Bật mic trên TẤT CẢ SFU connections
+    for (final sfu in _broadcastSfuList) {
+      sfu.startTalking();
+    }
+    _broadcastWs?.send({'type': 'broadcast-start'});
+  }
+
+  void _stopBroadcast() {
+    if (!_isBroadcasting) return;
+    setState(() => _isBroadcasting = false);
+    // Tắt mic trên TẤT CẢ SFU connections
+    for (final sfu in _broadcastSfuList) {
+      sfu.stopTalking();
+    }
+    _broadcastWs?.send({'type': 'broadcast-stop'});
   }
 
   void _showSnack(String msg, {bool isError = false}) {
@@ -244,20 +347,13 @@ class _RoomScreenState extends State<RoomScreen> {
                           ),
                           const SizedBox(width: 10),
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  m['display_name'] ??
-                                      m['username'] ??
-                                      'Unknown',
-                                  style: const TextStyle(
-                                    color: _text,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
+                            child: Text(
+                              m['display_name'] ?? m['username'] ?? 'Unknown',
+                              style: const TextStyle(
+                                color: _text,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
                             ),
                           ),
                           Container(
@@ -395,7 +491,6 @@ class _RoomScreenState extends State<RoomScreen> {
       widget.user.token,
       widget.room.id,
     );
-
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -472,18 +567,13 @@ class _RoomScreenState extends State<RoomScreen> {
                         ),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                m['display_name'] ?? m['username'] ?? 'Unknown',
-                                style: const TextStyle(
-                                  color: _text,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
+                          child: Text(
+                            m['display_name'] ?? m['username'] ?? 'Unknown',
+                            style: const TextStyle(
+                              color: _text,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
                           ),
                         ),
                         GestureDetector(
@@ -691,37 +781,62 @@ class _RoomScreenState extends State<RoomScreen> {
             if (isOwner)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF1A56DB), Color(0xFF3B82F6)],
-                    ),
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _blue.withOpacity(0.3),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
+                child: GestureDetector(
+                  onTapDown: (_) => _startBroadcast(),
+                  onTapUp: (_) => _stopBroadcast(),
+                  onTapCancel: () => _stopBroadcast(),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: _isBroadcasting
+                            ? [const Color(0xFF16a34a), const Color(0xFF22c55e)]
+                            : [
+                                const Color(0xFF1A56DB),
+                                const Color(0xFF3B82F6),
+                              ],
                       ),
-                    ],
-                  ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.campaign_rounded, color: _white, size: 20),
-                      SizedBox(width: 8),
-                      Text(
-                        'Broadcast to Room',
-                        style: TextStyle(
-                          color: _white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
-                          letterSpacing: 0.3,
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                          color:
+                              (_isBroadcasting
+                                      ? const Color(0xFF16a34a)
+                                      : _blue)
+                                  .withOpacity(0.35),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          _isBroadcasting
+                              ? Icons.campaign_rounded
+                              : Icons.campaign_outlined,
+                          color: _white,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _isBroadcasting
+                              ? 'BROADCASTING... (${_broadcastSfuList.length} channels)'
+                              : _broadcastReady
+                              ? 'Hold to Broadcast (${_broadcastSfuList.length} channels)'
+                              : 'Preparing broadcast...',
+                          style: const TextStyle(
+                            color: _white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

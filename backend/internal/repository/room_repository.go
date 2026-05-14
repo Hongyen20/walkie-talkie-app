@@ -92,6 +92,12 @@ func (r *RoomRepository) IsMember(ctx context.Context, roomID, userID primitive.
 	return err == nil && count > 0
 }
 
+// Check user is owner of room
+func (r *RoomRepository) IsOwner(ctx context.Context, roomID, userID primitive.ObjectID) bool {
+	role, err := r.GetMemberRole(ctx, roomID, userID)
+	return err == nil && role == "owner"
+}
+
 // Get list members of room
 func (r *RoomRepository) GetMembersWithInfo(ctx context.Context, db *mongo.Database, roomID primitive.ObjectID) ([]model.MemberInfo, error) {
 	cursor, err := r.members.Find(ctx, bson.M{"room_id": roomID})
@@ -192,5 +198,4 @@ func (r *RoomRepository) DeleteRoom(ctx context.Context, roomID primitive.Object
 	//Delete all members in this Room
 	r.members.DeleteMany(ctx, bson.M{"room_id": roomID})
 	return err
-
 }

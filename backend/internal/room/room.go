@@ -68,6 +68,28 @@ func (r *Room) BroadcastToChannel(sender *Client, channelID string, msg []byte) 
 	}
 }
 
+// Broadcast to ALL clients in room (all channels) — for owner broadcast
+func (r *Room) BroadcastToRoom(sender *Client, msg []byte) {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	var toRemove []*Client
+	for _, client := range r.Clients {
+		if client.ID == sender.ID {
+			continue
+		}
+		err := client.Conn.WriteMessage(websocket.TextMessage, msg)
+		if err != nil {
+			log.Println("[ERROR] BroadcastToRoom write:", err)
+			client.Conn.Close()
+			toRemove = append(toRemove, client)
+		}
+	}
+	for _, client := range toRemove {
+		delete(r.Clients, client.Conn)
+	}
+}
+
 func (r *Room) SendTo(targetID string, msg []byte) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
