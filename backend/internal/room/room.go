@@ -51,14 +51,17 @@ func (r *Room) BroadcastToChannel(sender *Client, channelID string, msg []byte) 
 	var toRemove []*Client
 	for _, client := range r.Clients {
 		if client.ID == sender.ID {
-			continue //just send in channel
+			continue
+		}
+		// ✅ Chỉ gửi đến client cùng channel
+		if client.ChannelID != channelID {
+			continue
 		}
 
 		err := client.Conn.WriteMessage(websocket.TextMessage, msg)
 		if err != nil {
 			log.Println("[ERROR] Write:", err)
 			client.Conn.Close()
-
 			toRemove = append(toRemove, client)
 			continue
 		}
@@ -171,4 +174,18 @@ func (m *RoomManager) SendToUser(username string, msg []byte) {
 		}
 		r.mutex.Unlock()
 	}
+}
+
+// Get list of IDs clients filtered by channelID
+func (r *Room) GetClientIDsByChannel(channelID string) []string {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	ids := make([]string, 0)
+	for _, client := range r.Clients {
+		if client.ChannelID == channelID {
+			ids = append(ids, client.ID)
+		}
+	}
+	return ids
 }

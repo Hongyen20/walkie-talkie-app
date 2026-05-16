@@ -118,6 +118,12 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 
 		defer func() {
 			wsRoom.RemoveClient(client)
+			// Broadcast user-left to remaining clients in same channel
+			leftMsg, _ := json.Marshal(map[string]string{
+				"type": "user-left",
+				"from": username,
+			})
+			wsRoom.BroadcastToChannel(client, channelIDStr, leftMsg)
 			conn.Close()
 			manager.CleanIfEmpty(roomIDStr)
 			log.Printf("[DISCONNECT] %s\n", username)
@@ -158,7 +164,7 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 			switch incoming.Type {
 			case "join":
 				// online-list
-				listStr := strings.Join(wsRoom.GetClientIDs(), ",")
+				listStr := strings.Join(wsRoom.GetClientIDsByChannel(channelIDStr), ",")
 				listJSON, _ := json.Marshal(listStr)
 				onlineList := Message{
 					Type:    "online-list",

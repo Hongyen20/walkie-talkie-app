@@ -115,7 +115,24 @@ class _RoomScreenState extends State<RoomScreen> {
     }
 
     // WS dùng channel đầu tiên để gửi broadcast-start/stop signal
+    // Đồng thời handle renegotiate cho broadcast SFU connections
     _broadcastWs = WebSocketService();
+    _broadcastWs!.onMessage = (msg) {
+      final type = msg['type'] ?? '';
+      if (type == 'sfu-renegotiate') {
+        final sdp = msg['message']?.toString() ?? '';
+        final channelId = msg['channel_id']?.toString() ?? '';
+        if (sdp.isEmpty) return;
+        // Tìm đúng SFU instance theo channel_id
+        for (int i = 0; i < _channels.length; i++) {
+          if (_channels[i].id == channelId && i < _broadcastSfuList.length) {
+            print('[BROADCAST] Renegotiate for channel: ${_channels[i].name}');
+            _broadcastSfuList[i].handleRenegotiate(sdp);
+            break;
+          }
+        }
+      }
+    };
     _broadcastWs!.connect(widget.user.token, widget.room.id, _channels[0].id);
 
     setState(() => _broadcastReady = _broadcastSfuList.isNotEmpty);

@@ -80,15 +80,16 @@ func (h *SFUHandler) HandleOffer(w http.ResponseWriter, r *http.Request) {
 	sfuRoom := h.manager.GetOrCreateRoom(roomKey)
 
 	if sfuRoom.OnRenegotiate == nil {
+		cID := channelID
 		sfuRoom.OnRenegotiate = func(pid string, sdp string) {
 			log.Printf("[SFU] Sending renegotiate to %s\n", pid)
 			if h.notifyFunc != nil {
-				// peerID có thể là "username_broadcast" — strip suffix để tìm đúng WS client
 				wsTarget := strings.TrimSuffix(pid, "_broadcast")
-				log.Printf("[SFU] Renegotiate WS target: %s (from peerID: %s)\n", wsTarget, pid)
+				log.Printf("[SFU] Renegotiate WS target: %s (from peerID: %s) channel: %s\n", wsTarget, pid, cID)
 				h.notifyFunc(wsTarget, map[string]interface{}{
-					"type":    "sfu-renegotiate",
-					"message": sdp,
+					"type":       "sfu-renegotiate",
+					"message":    sdp,
+					"channel_id": cID,
 				})
 			}
 		}
