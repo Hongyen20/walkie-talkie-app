@@ -1,0 +1,54 @@
+name: Deploy Frontend (Flutter)
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'frontend/**'   # Chỉ chạy khi có thay đổi trong thư mục frontend
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Cài Flutter (thay thế cho việc build trên VS Code)
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.x'   # Điền version Flutter bạn đang dùng
+          channel: 'stable'
+          cache: true              # Cache để lần sau build nhanh hơn
+
+      # 3. Cài dependencies
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: flutter pub get
+
+      # 4. Build web
+      - name: Build Flutter Web
+        working-directory: ./frontend
+        run: flutter build web --release --base-href "/"
+
+      # 5. Copy build lên EC2 (thay thế WinSCP)
+      - name: Deploy to EC2 via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "frontend/build/web/*"
+          target: ${{ secrets.EC2_FRONTEND_PATH }}
+          strip_components: 3   # Bỏ prefix "frontend/build/web"
+
+      # 6. Reload Nginx
+      - name: Reload Nginx
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: sudo systemctl reload nginx

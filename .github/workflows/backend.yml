@@ -1,0 +1,48 @@
+name: Deploy Backend (Golang)
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.1'
+          cache-dependency-path: backend/go.sum
+
+      - name: Build binary
+        working-directory: ./backend
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o app-binary ./...
+
+      - name: Copy binary to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "backend/app-binary"
+          target: "/home/ubuntu/walkie-talkie-app/backend/"
+          strip_components: 1
+
+      - name: Restart backend service
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            chmod +x /home/ubuntu/walkie-talkie-app/backend/app-binary
+            sudo systemctl restart backend.service
+            sleep 2
+            sudo systemctl is-active backend.service
