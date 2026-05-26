@@ -115,7 +115,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         backgroundColor: _white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
-          'Edit Display Name',
+          'Change Display Name',
           style: TextStyle(color: _text, fontWeight: FontWeight.w700),
         ),
         content: TextField(
@@ -390,7 +390,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   _settingTile(
                     icon: Icons.edit,
-                    label: "Edit Display Name",
+                    label: "Change Display Name",
                     onTap: _showEditDisplayName,
                   ),
                   _settingTile(
