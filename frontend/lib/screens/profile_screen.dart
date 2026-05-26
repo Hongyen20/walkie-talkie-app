@@ -340,7 +340,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const SizedBox(width: 12),
                   const Text(
-                    "Profile",
+                    "Profile AAAAAAAAA",
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                 ],
