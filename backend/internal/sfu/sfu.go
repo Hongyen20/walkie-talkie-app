@@ -3,6 +3,7 @@ package sfu
 import (
 	"fmt"
 	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -82,7 +83,16 @@ func (r *SFURoom) CreatePeer(peerID string) (*Peer, error) {
 		},
 	}
 
-	pc, err := webrtc.NewPeerConnection(config)
+	settingEngine := webrtc.SettingEngine{}
+	publicIP := os.Getenv("PUBLIC_IP")
+	if publicIP != "" {
+		settingEngine.SetNAT1To1IPs([]string{publicIP}, webrtc.ICECandidateTypeHost)
+	}
+	// Mở port range cho ICE
+	settingEngine.SetEphemeralUDPPortRange(10000, 60000)
+
+	api := webrtc.NewAPI(webrtc.WithSettingEngine(settingEngine))
+	pc, err := api.NewPeerConnection(config)
 	if err != nil {
 		return nil, err
 	}

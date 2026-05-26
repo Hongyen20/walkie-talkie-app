@@ -36,7 +36,7 @@ class AuthService {
       body: jsonEncode({'username': username, 'password': password}),
     );
     final data = jsonDecode(res.body);
-    if (res.statusCode == 200) {
+    if (res.statusCode >= 200 && res.statusCode < 300) {
       await saveToken(data['token']);
       return {'user': User.fromJson(data, data['token'])};
     }
@@ -82,7 +82,7 @@ class AuthService {
       body: jsonEncode(body),
     );
     final data = jsonDecode(res.body);
-    if (res.statusCode == 200) {
+    if (res.statusCode >= 200 && res.statusCode < 300) {
       return {'message': data['message']};
     }
     return {'error': data['error']};
@@ -102,7 +102,7 @@ class AuthService {
       body: jsonEncode({'password': password}),
     );
     final data = jsonDecode(res.body);
-    if (res.statusCode == 200) {
+    if (res.statusCode >= 200 && res.statusCode < 300) {
       await clearToken();
       return {'message': data['message']};
     }

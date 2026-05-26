@@ -13,7 +13,7 @@ class RoomService {
         'Authorization': 'Bearer $token',
       },
     );
-    if (res.statusCode == 200) {
+    if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body);
       // Check Null before check phrase
       if (data == null) return [];
@@ -49,7 +49,7 @@ class RoomService {
       body: jsonEncode({'invite_code': inviteCode}),
     );
     final data = jsonDecode(res.body);
-    if (res.statusCode == 200) {
+    if (res.statusCode >= 200 && res.statusCode < 300) {
       return {'room': Room.fromJson(data)};
     }
     return {'error': data['error']};
@@ -63,7 +63,7 @@ class RoomService {
         'Authorization': 'Bearer $token',
       },
     );
-    if (res.statusCode == 200) {
+    if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body);
       if (data == null) return [];
       final List list = data is List ? data : [];
@@ -133,7 +133,7 @@ class RoomService {
         'Authorization': 'Bearer $token',
       },
     );
-    if (res.statusCode == 200) {
+    if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body);
       if (data == null) return [];
       return List<Map<String, dynamic>>.from(data);
