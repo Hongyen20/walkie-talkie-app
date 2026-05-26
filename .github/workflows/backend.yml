@@ -23,7 +23,7 @@ jobs:
       - name: Build binary
         working-directory: ./backend
         run: |
-          GOOS=linux GOARCH=amd64 go build -o app-binary ./...
+          GOOS=linux GOARCH=amd64 go build -o app-binary .
 
       - name: Copy binary to EC2
         uses: appleboy/scp-action@v0.1.7
