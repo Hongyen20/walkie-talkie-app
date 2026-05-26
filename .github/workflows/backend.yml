@@ -45,5 +45,5 @@ jobs:
           script: |
             chmod +x /home/ubuntu/walkie-talkie-app/backend/app-binary
             sudo systemctl restart backend.service
-            sleep 2
+            sleep 5
             sudo systemctl is-active backend.service
