@@ -122,7 +122,9 @@ func main() {
 		} else if len(parts) == 3 {
 			if r.Method == "DELETE" {
 				roomHandler.DeleteRoom(w, r)
-			}
+			} else if r.Method == "PUT" {  
+        roomHandler.RenameRoom(w, r)
+    }
 		}
 	}))
 
