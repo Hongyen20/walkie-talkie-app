@@ -5,184 +5,324 @@ import '../models/room.dart';
 import '../models/channel.dart';
 
 class RoomService {
+  // =========================
+  // GET ROOMS
+  // =========================
   Future<List<Room>> getRooms(String token) async {
-    final res = await http.get(
-      Uri.parse('${Constants.baseUrl}/rooms'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-    );
-    if (res.statusCode >= 200 && res.statusCode < 300) {
-      final data = jsonDecode(res.body);
-      // Check Null before check phrase
-      if (data == null) return [];
-      final List list = data is List ? data : [];
-      return list.map((e) => Room.fromJson(e)).toList();
+    try {
+      final res = await http.get(
+        Uri.parse('${Constants.baseUrl}/rooms'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      print("GET ROOMS STATUS: ${res.statusCode}");
+      print("GET ROOMS BODY: '${res.body}'");
+
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        return [];
+      }
+
+      if (res.body.isEmpty) {
+        return [];
+      }
+
+      final decoded = jsonDecode(res.body);
+
+      if (decoded is! List) {
+        return [];
+      }
+
+      return decoded.map<Room>((e) => Room.fromJson(e)).toList();
+    } catch (e) {
+      print("GET ROOMS ERROR: $e");
+      return [];
     }
-    return [];
   }
 
+  // =========================
+  // CREATE ROOM
+  // =========================
   Future<Room?> createRoom(String token, String name) async {
-    final res = await http.post(
-      Uri.parse('${Constants.baseUrl}/rooms'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode({'name': name}),
-    );
-    if (res.statusCode == 201) {
+    try {
+      final res = await http.post(
+        Uri.parse('${Constants.baseUrl}/rooms'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'name': name}),
+      );
+
+      if (res.statusCode != 201 || res.body.isEmpty) {
+        return null;
+      }
+
       return Room.fromJson(jsonDecode(res.body));
+    } catch (e) {
+      print("CREATE ROOM ERROR: $e");
+      return null;
     }
-    return null;
   }
 
-  //Join room through invite code
+  // =========================
+  // JOIN ROOM
+  // =========================
   Future<Map<String, dynamic>> joinRoom(String token, String inviteCode) async {
-    final res = await http.post(
-      Uri.parse('${Constants.baseUrl}/rooms/join'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode({'invite_code': inviteCode}),
-    );
-    final data = jsonDecode(res.body);
-    if (res.statusCode >= 200 && res.statusCode < 300) {
-      return {'room': Room.fromJson(data)};
-    }
-    return {'error': data['error']};
-  }
+    try {
+      final res = await http.post(
+        Uri.parse('${Constants.baseUrl}/rooms/join'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'invite_code': inviteCode}),
+      );
 
-  Future<List<Channel>> getChannels(String token, String roomId) async {
-    final res = await http.get(
-      Uri.parse('${Constants.baseUrl}/rooms/$roomId/channels'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-    );
-    if (res.statusCode >= 200 && res.statusCode < 300) {
+      if (res.body.isEmpty) {
+        return {'error': 'Empty response'};
+      }
+
       final data = jsonDecode(res.body);
-      if (data == null) return [];
-      final List list = data is List ? data : [];
-      return list.map((e) => Channel.fromJson(e)).toList();
+
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        return {'room': Room.fromJson(data)};
+      }
+
+      return {'error': data['error'] ?? 'Unknown error'};
+    } catch (e) {
+      print("JOIN ROOM ERROR: $e");
+      return {'error': e.toString()};
     }
-    return [];
   }
 
+  // =========================
+  // GET CHANNELS
+  // =========================
+  Future<List<Channel>> getChannels(String token, String roomId) async {
+    try {
+      final res = await http.get(
+        Uri.parse('${Constants.baseUrl}/rooms/$roomId/channels'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        return [];
+      }
+
+      if (res.body.isEmpty) {
+        return [];
+      }
+
+      final decoded = jsonDecode(res.body);
+
+      if (decoded is! List) {
+        return [];
+      }
+
+      return decoded.map<Channel>((e) => Channel.fromJson(e)).toList();
+    } catch (e) {
+      print("GET CHANNELS ERROR: $e");
+      return [];
+    }
+  }
+
+  // =========================
+  // CREATE CHANNEL
+  // =========================
   Future<bool> createChannel(String token, String roomId, String name) async {
-    final res = await http.post(
-      Uri.parse('${Constants.baseUrl}/rooms/$roomId/channels'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode({'name': name}),
-    );
-    return res.statusCode == 201;
+    try {
+      final res = await http.post(
+        Uri.parse('${Constants.baseUrl}/rooms/$roomId/channels'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'name': name}),
+      );
+
+      return res.statusCode == 201;
+    } catch (e) {
+      print("CREATE CHANNEL ERROR: $e");
+      return false;
+    }
   }
 
-  //Delete Room
+  // =========================
+  // DELETE ROOM
+  // =========================
   Future<bool> deleteRoom(String token, String roomId) async {
-    final res = await http.delete(
-      Uri.parse('${Constants.baseUrl}/rooms/$roomId'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-    );
-    return res.statusCode == 200;
+    try {
+      final res = await http.delete(
+        Uri.parse('${Constants.baseUrl}/rooms/$roomId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      return res.statusCode == 200;
+    } catch (e) {
+      print("DELETE ROOM ERROR: $e");
+      return false;
+    }
   }
 
+  // =========================
+  // DELETE CHANNEL
+  // =========================
   Future<bool> deleteChannel(
     String token,
     String roomId,
     String channelId,
   ) async {
-    final res = await http.delete(
-      Uri.parse('${Constants.baseUrl}/rooms/$roomId/channels/$channelId'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-    );
-    return res.statusCode == 200;
+    try {
+      final res = await http.delete(
+        Uri.parse('${Constants.baseUrl}/rooms/$roomId/channels/$channelId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      return res.statusCode == 200;
+    } catch (e) {
+      print("DELETE CHANNEL ERROR: $e");
+      return false;
+    }
   }
 
+  // =========================
+  // LEAVE ROOM
+  // =========================
   Future<bool> leaveRoom(String token, String roomId) async {
-    final res = await http.delete(
-      Uri.parse('${Constants.baseUrl}/rooms/$roomId/leave'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-    );
-    return res.statusCode == 200;
+    try {
+      final res = await http.delete(
+        Uri.parse('${Constants.baseUrl}/rooms/$roomId/leave'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      return res.statusCode == 200;
+    } catch (e) {
+      print("LEAVE ROOM ERROR: $e");
+      return false;
+    }
   }
 
+  // =========================
+  // GET MEMBERS
+  // =========================
   Future<List<Map<String, dynamic>>> getMembers(
     String token,
     String roomId,
   ) async {
-    final res = await http.get(
-      Uri.parse('${Constants.baseUrl}/rooms/$roomId/members'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-    );
-    if (res.statusCode >= 200 && res.statusCode < 300) {
-      final data = jsonDecode(res.body);
-      if (data == null) return [];
-      return List<Map<String, dynamic>>.from(data);
+    try {
+      final res = await http.get(
+        Uri.parse('${Constants.baseUrl}/rooms/$roomId/members'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        return [];
+      }
+
+      if (res.body.isEmpty) {
+        return [];
+      }
+
+      final decoded = jsonDecode(res.body);
+
+      if (decoded is! List) {
+        return [];
+      }
+
+      return List<Map<String, dynamic>>.from(decoded);
+    } catch (e) {
+      print("GET MEMBERS ERROR: $e");
+      return [];
     }
-    return [];
   }
 
+  // =========================
+  // KICK MEMBER
+  // =========================
   Future<bool> kickMember(String token, String roomId, String userId) async {
-    final res = await http.delete(
-      Uri.parse('${Constants.baseUrl}/rooms/$roomId/members/$userId'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-    );
-    return res.statusCode == 200;
+    try {
+      final res = await http.delete(
+        Uri.parse('${Constants.baseUrl}/rooms/$roomId/members/$userId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      return res.statusCode == 200;
+    } catch (e) {
+      print("KICK MEMBER ERROR: $e");
+      return false;
+    }
   }
 
+  // =========================
+  // ADD CHANNEL MEMBER
+  // =========================
   Future<bool> addChannelMember(
     String token,
     String roomId,
     String channelId,
     String userId,
   ) async {
-    final res = await http.post(
-      Uri.parse(
-        '${Constants.baseUrl}/rooms/$roomId/channels/$channelId/members',
-      ),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode({'user_id': userId}),
-    );
-    return res.statusCode == 200;
+    try {
+      final res = await http.post(
+        Uri.parse(
+          '${Constants.baseUrl}/rooms/$roomId/channels/$channelId/members',
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'user_id': userId}),
+      );
+
+      return res.statusCode == 200;
+    } catch (e) {
+      print("ADD CHANNEL MEMBER ERROR: $e");
+      return false;
+    }
   }
 
+  // =========================
+  // REMOVE CHANNEL MEMBER
+  // =========================
   Future<bool> removeChannelMember(
     String token,
     String roomId,
     String channelId,
     String userId,
   ) async {
-    final res = await http.delete(
-      Uri.parse(
-        '${Constants.baseUrl}/rooms/$roomId/channels/$channelId/members/$userId',
-      ),
-      headers: {'Authorization': 'Bearer $token'},
-    );
-    return res.statusCode == 200;
+    try {
+      final res = await http.delete(
+        Uri.parse(
+          '${Constants.baseUrl}/rooms/$roomId/channels/$channelId/members/$userId',
+        ),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      return res.statusCode == 200;
+    } catch (e) {
+      print("REMOVE CHANNEL MEMBER ERROR: $e");
+      return false;
+    }
   }
 }
