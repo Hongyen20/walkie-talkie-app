@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/user.dart';
 import '../services/auth_service.dart';
+import '../services/storage_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   final User user;
@@ -346,6 +347,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             _showSnack(result['error'], isError: true);
           } else {
             widget.onLogout();
+            await StorageService.clearUser();
           }
         },
         onCancel: () => Navigator.pop(ctx),
@@ -483,7 +485,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                               ),
                             ),
                             const SizedBox(height: 2),
-                          
                           ],
                         ),
                       ),

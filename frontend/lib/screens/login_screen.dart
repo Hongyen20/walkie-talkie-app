@@ -3,6 +3,7 @@ import '../services/auth_service.dart';
 import 'register_screen.dart';
 import 'room_list_screen.dart';
 import '../models/user.dart';
+import '../services/storage_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -20,7 +21,10 @@ class _LoginScreenState extends State<LoginScreen> {
   String _error = '';
 
   Future<void> _login() async {
-    setState(() { _isLoading = true; _error = ''; });
+    setState(() {
+      _isLoading = true;
+      _error = '';
+    });
 
     final result = await _authService.login(
       _usernameController.text.trim(),
@@ -30,8 +34,21 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = false);
 
     if (result['user'] != null) {
-      Navigator.pushReplacement(context,
-        MaterialPageRoute(builder: (_) => RoomListScreen(user: result['user'] as User)));
+      final user = result['user'] as User;
+
+      // Save local storage
+      await StorageService.saveUser(
+        token: user.token,
+        userId: user.id,
+        username: user.username,
+        displayName: user.displayName,
+        inviteCode: user.inviteCode,
+      );
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => RoomListScreen(user: user)),
+      );
     } else {
       setState(() => _error = result['error'] ?? 'Login failed');
     }
@@ -59,32 +76,41 @@ class _LoginScreenState extends State<LoginScreen> {
                       color: const Color(0xFF1A56DB),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(Icons.wifi_calling_3_rounded,
-                        color: Colors.white, size: 24),
+                    child: const Icon(
+                      Icons.wifi_calling_3_rounded,
+                      color: Colors.white,
+                      size: 24,
+                    ),
                   ),
                   const SizedBox(width: 12),
-                  const Text('Walkie',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1A56DB),
-                        letterSpacing: -0.5,
-                      )),
+                  const Text(
+                    'Walkie',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1A56DB),
+                      letterSpacing: -0.5,
+                    ),
+                  ),
                 ],
               ),
 
               const SizedBox(height: 48),
 
-              const Text('Welcome back 👋',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF111827),
-                    letterSpacing: -0.5,
-                  )),
+              const Text(
+                'Welcome back 👋',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF111827),
+                  letterSpacing: -0.5,
+                ),
+              ),
               const SizedBox(height: 6),
-              const Text('Sign in to your account',
-                  style: TextStyle(fontSize: 15, color: Color(0xFF6B7280))),
+              const Text(
+                'Sign in to your account',
+                style: TextStyle(fontSize: 15, color: Color(0xFF6B7280)),
+              ),
 
               const SizedBox(height: 36),
 
@@ -106,64 +132,86 @@ class _LoginScreenState extends State<LoginScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Username
-                    const Text('Username',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF374151),
-                        )),
+                    const Text(
+                      'Username',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF374151),
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _usernameController,
                       onSubmitted: (_) => _login(),
                       style: const TextStyle(
-                          fontSize: 15, color: Color(0xFF111827)),
+                        fontSize: 15,
+                        color: Color(0xFF111827),
+                      ),
                       decoration: InputDecoration(
                         hintText: 'Enter your username',
                         hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
-                        prefixIcon: const Icon(Icons.person_outline_rounded,
-                            color: Color(0xFF9CA3AF), size: 20),
+                        prefixIcon: const Icon(
+                          Icons.person_outline_rounded,
+                          color: Color(0xFF9CA3AF),
+                          size: 20,
+                        ),
                         filled: true,
                         fillColor: const Color(0xFFF9FAFB),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFE5E7EB),
+                          ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFE5E7EB),
+                          ),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: const BorderSide(
-                              color: Color(0xFF1A56DB), width: 1.5),
+                            color: Color(0xFF1A56DB),
+                            width: 1.5,
+                          ),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 14),
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
                       ),
                     ),
 
                     const SizedBox(height: 20),
 
                     // Password
-                    const Text('Password',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF374151),
-                        )),
+                    const Text(
+                      'Password',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF374151),
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _passwordController,
                       obscureText: _obscurePassword,
                       onSubmitted: (_) => _login(),
                       style: const TextStyle(
-                          fontSize: 15, color: Color(0xFF111827)),
+                        fontSize: 15,
+                        color: Color(0xFF111827),
+                      ),
                       decoration: InputDecoration(
                         hintText: 'Enter your password',
                         hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
-                        prefixIcon: const Icon(Icons.lock_outline_rounded,
-                            color: Color(0xFF9CA3AF), size: 20),
+                        prefixIcon: const Icon(
+                          Icons.lock_outline_rounded,
+                          color: Color(0xFF9CA3AF),
+                          size: 20,
+                        ),
                         suffixIcon: IconButton(
                           icon: Icon(
                             _obscurePassword
@@ -173,25 +221,34 @@ class _LoginScreenState extends State<LoginScreen> {
                             size: 20,
                           ),
                           onPressed: () => setState(
-                              () => _obscurePassword = !_obscurePassword),
+                            () => _obscurePassword = !_obscurePassword,
+                          ),
                         ),
                         filled: true,
                         fillColor: const Color(0xFFF9FAFB),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFE5E7EB),
+                          ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFE5E7EB),
+                          ),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: const BorderSide(
-                              color: Color(0xFF1A56DB), width: 1.5),
+                            color: Color(0xFF1A56DB),
+                            width: 1.5,
+                          ),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 14),
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
                       ),
                     ),
 
@@ -200,7 +257,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 12),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFFEF2F2),
                           borderRadius: BorderRadius.circular(8),
@@ -208,13 +267,20 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.error_outline_rounded,
-                                color: Color(0xFFEF4444), size: 16),
+                            const Icon(
+                              Icons.error_outline_rounded,
+                              color: Color(0xFFEF4444),
+                              size: 16,
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: Text(_error,
-                                  style: const TextStyle(
-                                      color: Color(0xFFEF4444), fontSize: 13)),
+                              child: Text(
+                                _error,
+                                style: const TextStyle(
+                                  color: Color(0xFFEF4444),
+                                  fontSize: 13,
+                                ),
+                              ),
                             ),
                           ],
                         ),
@@ -244,10 +310,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                 child: CircularProgressIndicator(
                                   color: Colors.white,
                                   strokeWidth: 2,
-                                ))
-                            : const Text('Sign In',
+                                ),
+                              )
+                            : const Text(
+                                'Sign In',
                                 style: TextStyle(
-                                    fontSize: 15, fontWeight: FontWeight.w600)),
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                       ),
                     ),
                   ],
@@ -261,19 +332,25 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text("Don't have an account? ",
-                        style: TextStyle(
-                            color: Color(0xFF6B7280), fontSize: 14)),
+                    const Text(
+                      "Don't have an account? ",
+                      style: TextStyle(color: Color(0xFF6B7280), fontSize: 14),
+                    ),
                     GestureDetector(
-                      onTap: () => Navigator.push(context,
-                          MaterialPageRoute(
-                              builder: (_) => const RegisterScreen())),
-                      child: const Text('Sign Up',
-                          style: TextStyle(
-                            color: Color(0xFF1A56DB),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          )),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const RegisterScreen(),
+                        ),
+                      ),
+                      child: const Text(
+                        'Sign Up',
+                        style: TextStyle(
+                          color: Color(0xFF1A56DB),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ],
                 ),
