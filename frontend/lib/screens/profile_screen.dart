@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/user.dart';
 import '../services/auth_service.dart';
-import '../services/storage_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   final User user;
@@ -211,8 +210,9 @@ class _ProfileScreenState extends State<ProfileScreen>
         subtitle: 'Are you sure you want to logout?',
         confirmLabel: 'Logout',
         confirmColor: const Color(0xFFEF4444),
-        onConfirm: () {
+        onConfirm: () async {
           Navigator.pop(ctx);
+          await StorageService.clearUser();
           widget.onLogout();
         },
         onCancel: () => Navigator.pop(ctx),
@@ -346,8 +346,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           if (result['error'] != null) {
             _showSnack(result['error'], isError: true);
           } else {
-            widget.onLogout();
             await StorageService.clearUser();
+            widget.onLogout();
           }
         },
         onCancel: () => Navigator.pop(ctx),
@@ -804,7 +804,7 @@ class _ConfirmSheet extends StatelessWidget {
   final String subtitle;
   final String confirmLabel;
   final Color confirmColor;
-  final VoidCallback onConfirm;
+  final Future<void> Function() onConfirm;
   final VoidCallback onCancel;
 
   const _ConfirmSheet({

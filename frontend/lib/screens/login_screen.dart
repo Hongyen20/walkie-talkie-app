@@ -35,8 +35,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (result['user'] != null) {
       final user = result['user'] as User;
-
-      // Save local storage
+      //Save store token
       await StorageService.saveUser(
         token: user.token,
         userId: user.id,
@@ -49,8 +48,6 @@ class _LoginScreenState extends State<LoginScreen> {
         context,
         MaterialPageRoute(builder: (_) => RoomListScreen(user: user)),
       );
-    } else {
-      setState(() => _error = result['error'] ?? 'Login failed');
     }
   }
 
