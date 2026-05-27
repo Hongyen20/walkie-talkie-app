@@ -25,12 +25,19 @@ func NewAuthService(userRepo *repository.UserRepository) *AuthService {
 
 // Register
 func (s *AuthService) Register(ctx context.Context, username, password, displayName string) (*model.User, error) {
-	//Hash password
+	// 1. Check username
+	existing, _ := s.userRepo.FindByUserName(ctx, username)
+	if existing != nil {
+		return nil, errors.New("Username already exists")
+	}
+
+	// 2. Hash password
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
 	}
 
+	// 3. New user
 	user := &model.User{
 		Username:    username,
 		Password:    string(hash),
@@ -39,7 +46,7 @@ func (s *AuthService) Register(ctx context.Context, username, password, displayN
 	}
 
 	if err := s.userRepo.Create(ctx, user); err != nil {
-		return nil, errors.New("Username already exists")
+		return nil, err
 	}
 	return user, nil
 }
