@@ -4,6 +4,7 @@ import '../models/user.dart';
 import '../models/room.dart';
 import '../services/room_service.dart';
 import '../services/auth_service.dart';
+import '../services/storage_service.dart';
 import 'room_screen.dart';
 import 'profile_screen.dart';
 import 'login_screen.dart';
@@ -22,7 +23,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
   bool _isLoading = true;
   late User _currentUser;
 
-  // ── Colors ──────────────────────────────────────
   static const _bg = Color(0xFFF0F4FF);
   static const _blue = Color(0xFF1A56DB);
   static const _white = Colors.white;
@@ -54,8 +54,22 @@ class _RoomListScreenState extends State<RoomListScreen> {
   void _showSnack(String msg, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(msg),
-        backgroundColor: isError ? const Color(0xFFEF4444) : _blue,
+        content: Row(
+          children: [
+            Icon(
+              isError
+                  ? Icons.error_outline_rounded
+                  : Icons.check_circle_outline_rounded,
+              color: Colors.white,
+              size: 16,
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Text(msg)),
+          ],
+        ),
+        backgroundColor: isError
+            ? const Color(0xFFEF4444)
+            : const Color(0xFF10B981),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
@@ -69,7 +83,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
         builder: (_) => ProfileScreen(
           user: _currentUser,
           onLogout: () async {
-            await AuthService().clearToken();
+            await StorageService.clearUser();
             Navigator.pushAndRemoveUntil(
               context,
               MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -84,7 +98,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
     );
   }
 
-  // ── Dialogs ──────────────────────────────────────
   InputDecoration _dialogInput(String label, String hint) => InputDecoration(
     labelText: label,
     labelStyle: const TextStyle(color: _textSub, fontSize: 13),
@@ -104,58 +117,169 @@ class _RoomListScreenState extends State<RoomListScreen> {
       borderRadius: BorderRadius.circular(12),
       borderSide: const BorderSide(color: _blue, width: 1.5),
     ),
+    errorBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: Color(0xFFEF4444)),
+    ),
+    focusedErrorBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
+    ),
   );
 
+  // ── Create Room ──────────────────────────────────────
   Future<void> _createRoom() async {
     final nameController = TextEditingController();
+    String? errorMsg;
+
     await showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: _white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Create Room',
-          style: TextStyle(
-            color: _text,
-            fontWeight: FontWeight.w700,
-            fontSize: 18,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStateDialog) => AlertDialog(
+          backgroundColor: _white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
           ),
-        ),
-        content: TextField(
-          controller: nameController,
-          style: const TextStyle(color: _text),
-          decoration: _dialogInput('Room Name', 'e.g. Construction Site A'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: _textSub)),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (nameController.text.trim().isEmpty) return;
-              await _roomService.createRoom(
-                _currentUser.token,
-                nameController.text.trim(),
-              );
-              Navigator.pop(context);
-              _loadRooms();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _blue,
-              foregroundColor: _white,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
+          title: const Text(
+            'Create Room',
+            style: TextStyle(
+              color: _text,
+              fontWeight: FontWeight.w700,
+              fontSize: 18,
             ),
-            child: const Text('Create'),
           ),
-        ],
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                style: const TextStyle(color: _text),
+                decoration: _dialogInput(
+                  'Room Name',
+                  'e.g. Construction Site A',
+                ),
+                autofocus: true,
+              ),
+              if (errorMsg != null) ...[
+                const SizedBox(height: 10),
+                _errorBox(errorMsg!),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel', style: TextStyle(color: _textSub)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (nameController.text.trim().isEmpty) return;
+                final result = await _roomService.createRoom(
+                  _currentUser.token,
+                  nameController.text.trim(),
+                );
+                if (result['error'] != null) {
+                  setStateDialog(() => errorMsg = result['error']);
+                } else {
+                  Navigator.pop(ctx);
+                  _loadRooms();
+                  _showSnack('Room created!');
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _blue,
+                foregroundColor: _white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: const Text('Create'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
+  // ── Rename Room ──────────────────────────────────────
+  Future<void> _renameRoom(Room room) async {
+    final nameController = TextEditingController(text: room.name);
+    String? errorMsg;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStateDialog) => AlertDialog(
+          backgroundColor: _white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text(
+            'Rename Room',
+            style: TextStyle(
+              color: _text,
+              fontWeight: FontWeight.w700,
+              fontSize: 18,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                style: const TextStyle(color: _text),
+                decoration: _dialogInput('New Name', 'Enter new room name'),
+                autofocus: true,
+              ),
+              if (errorMsg != null) ...[
+                const SizedBox(height: 10),
+                _errorBox(errorMsg!),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel', style: TextStyle(color: _textSub)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final newName = nameController.text.trim();
+                if (newName.isEmpty || newName == room.name) {
+                  Navigator.pop(ctx);
+                  return;
+                }
+                final result = await _roomService.renameRoom(
+                  _currentUser.token,
+                  room.id,
+                  newName,
+                );
+                if (result['error'] != null) {
+                  setStateDialog(() => errorMsg = result['error']);
+                } else {
+                  Navigator.pop(ctx);
+                  _loadRooms();
+                  _showSnack('Room renamed!');
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _blue,
+                foregroundColor: _white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Join Room ──────────────────────────────────────
   Future<void> _joinRoom() async {
     final codeController = TextEditingController();
     String? errorMsg;
@@ -183,39 +307,11 @@ class _RoomListScreenState extends State<RoomListScreen> {
                 controller: codeController,
                 style: const TextStyle(color: _text),
                 decoration: _dialogInput('Invite Code', 'e.g. ALPHA-9'),
+                autofocus: true,
               ),
               if (errorMsg != null) ...[
                 const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFEF2F2),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFFECACA)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.error_outline_rounded,
-                        color: Color(0xFFEF4444),
-                        size: 16,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          errorMsg!,
-                          style: const TextStyle(
-                            color: Color(0xFFEF4444),
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                _errorBox(errorMsg!),
               ],
             ],
           ),
@@ -326,6 +422,31 @@ class _RoomListScreenState extends State<RoomListScreen> {
     );
   }
 
+  Widget _errorBox(String msg) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    decoration: BoxDecoration(
+      color: const Color(0xFFFEF2F2),
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: const Color(0xFFFECACA)),
+    ),
+    child: Row(
+      children: [
+        const Icon(
+          Icons.error_outline_rounded,
+          color: Color(0xFFEF4444),
+          size: 16,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            msg,
+            style: const TextStyle(color: Color(0xFFEF4444), fontSize: 13),
+          ),
+        ),
+      ],
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -339,7 +460,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               child: Row(
                 children: [
-                  // Avatar + username — nhấn để vào Profile
                   GestureDetector(
                     onTap: _goToProfile,
                     child: Row(
@@ -378,14 +498,12 @@ class _RoomListScreenState extends State<RoomListScreen> {
                                 fontSize: 15,
                               ),
                             ),
-                            
                           ],
                         ),
                       ],
                     ),
                   ),
                   const Spacer(),
-                  // Join button
                   GestureDetector(
                     onTap: _joinRoom,
                     child: Container(
@@ -408,7 +526,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // Add button
                   GestureDetector(
                     onTap: _createRoom,
                     child: Container(
@@ -544,7 +661,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
                               children: [
                                 Row(
                                   children: [
-                                    // Room icon
                                     Container(
                                       width: 44,
                                       height: 44,
@@ -575,7 +691,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
                                             ),
                                           ),
                                           const SizedBox(height: 2),
-                                          // ✅ Invite code với nút copy
                                           GestureDetector(
                                             onTap: () {
                                               Clipboard.setData(
@@ -608,7 +723,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
                                         ],
                                       ),
                                     ),
-                                    // Role badge
                                     Container(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 10,
@@ -639,7 +753,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
                                 ),
                                 const SizedBox(height: 10),
 
-                                // Action buttons
                                 Row(
                                   children: [
                                     // Enter button
@@ -669,6 +782,33 @@ class _RoomListScreenState extends State<RoomListScreen> {
                                       ),
                                     ),
                                     const SizedBox(width: 8),
+                                    // Rename button — chỉ owner thấy
+                                    if (isOwner) ...[
+                                      GestureDetector(
+                                        onTap: () => _renameRoom(room),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 14,
+                                            vertical: 8,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFEEF2FF),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            'Rename',
+                                            style: TextStyle(
+                                              color: _blue,
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                    ],
                                     // Delete / Leave button
                                     GestureDetector(
                                       onTap: () => isOwner

@@ -194,3 +194,16 @@ func (s *RoomService) AddChannelMember(ctx context.Context, channelID, userID pr
 func (s *RoomService) RemoveChannelMember(ctx context.Context, channelID, userID primitive.ObjectID) error {
     return s.channelRepo.RemoveMember(ctx, channelID, userID)
 }
+
+func (s *RoomService) RenameRoom(ctx context.Context, roomID, userID primitive.ObjectID, newName string) error {
+	role, err := s.roomRepo.GetMemberRole(ctx, roomID, userID)
+	if err != nil || role != "owner" {
+		return errors.New("Only owner can rename room")
+	}
+	// Check trùng tên
+	existing, _ := s.roomRepo.FindByName(ctx, newName)
+	if existing != nil && existing.ID != roomID {
+		return errors.New("Room name already exists")
+	}
+	return s.roomRepo.RenameRoom(ctx, roomID, newName)
+}

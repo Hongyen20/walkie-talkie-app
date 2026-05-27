@@ -383,3 +383,30 @@ func (h *RoomHandler) RemoveChannelMember(w http.ResponseWriter, r *http.Request
 	}
 	WriteJSON(w, http.StatusOK, map[string]string{"message": "member removed from channel"})
 }
+
+// PUT /rooms/:id
+func (h *RoomHandler) RenameRoom(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	parts := strings.Split(r.URL.Path, "/")
+	roomID, err := primitive.ObjectIDFromHex(parts[2])
+	if err != nil {
+		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid room id"})
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
+		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "name required"})
+		return
+	}
+	if err := h.roomService.RenameRoom(r.Context(), roomID, userID, body.Name); err != nil {
+		WriteJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]string{"message": "room renamed"})
+}

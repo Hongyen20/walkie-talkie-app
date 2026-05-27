@@ -21,19 +21,11 @@ class RoomService {
       print("GET ROOMS STATUS: ${res.statusCode}");
       print("GET ROOMS BODY: '${res.body}'");
 
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        return [];
-      }
-
-      if (res.body.isEmpty) {
-        return [];
-      }
+      if (res.statusCode < 200 || res.statusCode >= 300) return [];
+      if (res.body.isEmpty) return [];
 
       final decoded = jsonDecode(res.body);
-
-      if (decoded is! List) {
-        return [];
-      }
+      if (decoded is! List) return [];
 
       return decoded.map<Room>((e) => Room.fromJson(e)).toList();
     } catch (e) {
@@ -45,7 +37,7 @@ class RoomService {
   // =========================
   // CREATE ROOM
   // =========================
-  Future<Room?> createRoom(String token, String name) async {
+  Future<Map<String, dynamic>> createRoom(String token, String name) async {
     try {
       final res = await http.post(
         Uri.parse('${Constants.baseUrl}/rooms'),
@@ -56,14 +48,43 @@ class RoomService {
         body: jsonEncode({'name': name}),
       );
 
-      if (res.statusCode != 201 || res.body.isEmpty) {
-        return null;
+      final data = jsonDecode(res.body);
+      if (res.statusCode == 201) {
+        return {'room': Room.fromJson(data)};
       }
-
-      return Room.fromJson(jsonDecode(res.body));
+      return {'error': data['error'] ?? 'Failed to create room'};
     } catch (e) {
       print("CREATE ROOM ERROR: $e");
-      return null;
+      return {'error': e.toString()};
+    }
+  }
+
+  // =========================
+  // RENAME ROOM
+  // =========================
+  Future<Map<String, dynamic>> renameRoom(
+    String token,
+    String roomId,
+    String newName,
+  ) async {
+    try {
+      final res = await http.put(
+        Uri.parse('${Constants.baseUrl}/rooms/$roomId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'name': newName}),
+      );
+
+      final data = jsonDecode(res.body);
+      if (res.statusCode == 200) {
+        return {'message': data['message']};
+      }
+      return {'error': data['error'] ?? 'Failed to rename room'};
+    } catch (e) {
+      print("RENAME ROOM ERROR: $e");
+      return {'error': e.toString()};
     }
   }
 
@@ -81,16 +102,12 @@ class RoomService {
         body: jsonEncode({'invite_code': inviteCode}),
       );
 
-      if (res.body.isEmpty) {
-        return {'error': 'Empty response'};
-      }
+      if (res.body.isEmpty) return {'error': 'Empty response'};
 
       final data = jsonDecode(res.body);
-
       if (res.statusCode >= 200 && res.statusCode < 300) {
         return {'room': Room.fromJson(data)};
       }
-
       return {'error': data['error'] ?? 'Unknown error'};
     } catch (e) {
       print("JOIN ROOM ERROR: $e");
@@ -111,19 +128,11 @@ class RoomService {
         },
       );
 
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        return [];
-      }
-
-      if (res.body.isEmpty) {
-        return [];
-      }
+      if (res.statusCode < 200 || res.statusCode >= 300) return [];
+      if (res.body.isEmpty) return [];
 
       final decoded = jsonDecode(res.body);
-
-      if (decoded is! List) {
-        return [];
-      }
+      if (decoded is! List) return [];
 
       return decoded.map<Channel>((e) => Channel.fromJson(e)).toList();
     } catch (e) {
@@ -145,7 +154,6 @@ class RoomService {
         },
         body: jsonEncode({'name': name}),
       );
-
       return res.statusCode == 201;
     } catch (e) {
       print("CREATE CHANNEL ERROR: $e");
@@ -165,7 +173,6 @@ class RoomService {
           'Authorization': 'Bearer $token',
         },
       );
-
       return res.statusCode == 200;
     } catch (e) {
       print("DELETE ROOM ERROR: $e");
@@ -189,7 +196,6 @@ class RoomService {
           'Authorization': 'Bearer $token',
         },
       );
-
       return res.statusCode == 200;
     } catch (e) {
       print("DELETE CHANNEL ERROR: $e");
@@ -209,7 +215,6 @@ class RoomService {
           'Authorization': 'Bearer $token',
         },
       );
-
       return res.statusCode == 200;
     } catch (e) {
       print("LEAVE ROOM ERROR: $e");
@@ -233,19 +238,11 @@ class RoomService {
         },
       );
 
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        return [];
-      }
-
-      if (res.body.isEmpty) {
-        return [];
-      }
+      if (res.statusCode < 200 || res.statusCode >= 300) return [];
+      if (res.body.isEmpty) return [];
 
       final decoded = jsonDecode(res.body);
-
-      if (decoded is! List) {
-        return [];
-      }
+      if (decoded is! List) return [];
 
       return List<Map<String, dynamic>>.from(decoded);
     } catch (e) {
@@ -266,7 +263,6 @@ class RoomService {
           'Authorization': 'Bearer $token',
         },
       );
-
       return res.statusCode == 200;
     } catch (e) {
       print("KICK MEMBER ERROR: $e");
@@ -294,7 +290,6 @@ class RoomService {
         },
         body: jsonEncode({'user_id': userId}),
       );
-
       return res.statusCode == 200;
     } catch (e) {
       print("ADD CHANNEL MEMBER ERROR: $e");
@@ -318,7 +313,6 @@ class RoomService {
         ),
         headers: {'Authorization': 'Bearer $token'},
       );
-
       return res.statusCode == 200;
     } catch (e) {
       print("REMOVE CHANNEL MEMBER ERROR: $e");

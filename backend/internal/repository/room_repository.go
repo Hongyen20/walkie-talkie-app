@@ -200,7 +200,7 @@ func (r *RoomRepository) DeleteRoom(ctx context.Context, roomID primitive.Object
 	return err
 }
 
-//Check room had yet
+// Check room had yet
 func (r *RoomRepository) FindByName(ctx context.Context, name string) (*model.Room, error) {
 	var room model.Room
 	err := r.rooms.FindOne(ctx, bson.M{"name": name}).Decode(&room)
@@ -208,4 +208,13 @@ func (r *RoomRepository) FindByName(ctx context.Context, name string) (*model.Ro
 		return nil, err
 	}
 	return &room, nil
+}
+
+// Rename Room
+func (r *RoomRepository) RenameRoom(ctx context.Context, roomID primitive.ObjectID, newName string) error {
+	_, err := r.rooms.UpdateOne(ctx,
+		bson.M{"_id": roomID},
+		bson.M{"$set": bson.M{"name": newName}},
+	)
+	return err
 }
