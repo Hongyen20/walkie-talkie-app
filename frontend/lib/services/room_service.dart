@@ -77,6 +77,13 @@ class RoomService {
         body: jsonEncode({'name': newName}),
       );
 
+      print("RENAME ROOM STATUS: ${res.statusCode}");
+      print("RENAME ROOM BODY: '${res.body}'");
+
+      if (res.body.isEmpty) {
+        return {'error': 'Empty response from server'};
+      }
+
       final data = jsonDecode(res.body);
       if (res.statusCode == 200) {
         return {'message': data['message']};
