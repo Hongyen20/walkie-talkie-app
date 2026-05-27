@@ -22,6 +22,12 @@ func NewRoomService(roomRepo *repository.RoomRepository, channelRepo *repository
 
 // Create new room
 func (s *RoomService) CreateRoom(ctx context.Context, ownerID primitive.ObjectID, name string) (*model.Room, error) {
+	//Check room had yet
+	existing, _ := s.roomRepo.FindByName(ctx, name)
+	if existing != nil {
+		return nil, errors.New("Room name already exists")
+	}
+	
 	room := &model.Room{
 		Name:        name,
 		OwnerID:     ownerID,
