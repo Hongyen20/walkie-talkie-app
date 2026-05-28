@@ -82,6 +82,21 @@ class _RoomScreenState extends State<RoomScreen> {
       return;
     }
 
+    // Auto-reconnect khi broadcast peer bị ICE drop
+    firstSfu.onStatusChange = (state) async {
+      if ((state == 'failed' || state == 'disconnected') && mounted) {
+        print('[BROADCAST] Connection $state — reconnecting...');
+        await Future.delayed(const Duration(seconds: 2));
+        if (!mounted) return;
+        await firstSfu.connect(
+          widget.user.token,
+          widget.room.id,
+          _channels[0].id,
+          peerId: broadcastPeerId,
+        );
+      }
+    };
+
     final firstConnected = await firstSfu.connect(
       widget.user.token,
       widget.room.id,
@@ -126,6 +141,7 @@ class _RoomScreenState extends State<RoomScreen> {
       }
     };
 
+    // Thêm ?broadcast=1 để server biết đây là broadcast-only WS
     // → không add vào online list, không gửi user-joined/left
     _broadcastWs!.connectBroadcast(
       widget.user.token,

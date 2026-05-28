@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:js_interop';
 import 'package:http/http.dart' as http;
@@ -12,10 +13,12 @@ class WebRTCSFUService {
   String? _token;
   String? _peerId;
 
-  // Track audio element riêng cho mỗi instance — không xóa nhầm của instance khác
   web.HTMLAudioElement? _audioElement;
-
   Function(String)? onStatusChange;
+
+  // Queue để serialize renegotiate — tránh race condition
+  final _renegQueue = <String>[];
+  bool _renegBusy = false;
 
   Future<bool> initLocalStream() async {
     try {
@@ -45,6 +48,8 @@ class WebRTCSFUService {
     _roomId = roomId;
     _channelId = channelId;
     _peerId = peerId;
+    _renegQueue.clear();
+    _renegBusy = false;
 
     try {
       final config = web.RTCConfiguration(
@@ -60,13 +65,11 @@ class WebRTCSFUService {
         });
       }
 
-      // Tạo audio element 1 lần, reuse khi có track mới
       _pc!.ontrack = (web.RTCTrackEvent event) {
         print('[SFU] Got remote track! (peerId: ${_peerId ?? "default"})');
         final streams = event.streams.toDart;
         if (streams.isNotEmpty) {
           if (_audioElement == null) {
-            // Tạo audio element mới với ID unique theo peerId
             _audioElement = web.HTMLAudioElement();
             _audioElement!.autoplay = true;
             web.document.body!.append(_audioElement!);
@@ -74,7 +77,6 @@ class WebRTCSFUService {
               '[SFU] Created audio element for peerId: ${_peerId ?? "default"}',
             );
           }
-          // Reuse audio element đã có — chỉ update srcObject
           _audioElement!.srcObject = streams[0];
           print(
             '[SFU] Audio stream updated for peerId: ${_peerId ?? "default"}',
@@ -162,17 +164,48 @@ class WebRTCSFUService {
 
     _pc?.close();
     _pc = null;
+    _renegQueue.clear();
+    _renegBusy = false;
 
-    // Chỉ xóa audio element của chính instance này
-    // không xóa audio của các SFU instance khác (broadcast)
     _audioElement?.parentNode?.removeChild(_audioElement!);
     _audioElement = null;
 
     print('[SFU] Disconnected (peerId: ${_peerId ?? "default"})');
   }
 
-  Future<void> handleRenegotiate(String offerSdp) async {
+  // Queue renegotiate offers — xử lý tuần tự, không overlap
+  void handleRenegotiate(String offerSdp) {
+    _renegQueue.add(offerSdp);
+    _processRenegQueue();
+  }
+
+  Future<void> _processRenegQueue() async {
+    if (_renegBusy) return;
+    _renegBusy = true;
+
+    while (_renegQueue.isNotEmpty) {
+      // Nếu có nhiều offer pending, bỏ qua các offer cũ — chỉ xử lý offer mới nhất
+      final offerSdp = _renegQueue.last;
+      _renegQueue.clear();
+
+      await _doRenegotiate(offerSdp);
+    }
+
+    _renegBusy = false;
+  }
+
+  Future<void> _doRenegotiate(String offerSdp) async {
     if (_pc == null || _token == null) return;
+
+    // FIX: kiểm tra trạng thái PC trước khi xử lý
+    final signalingState = _pc!.signalingState ?? '';
+    if (signalingState != 'stable' && signalingState != 'have-remote-offer') {
+      print(
+        '[SFU] Skip renegotiate — wrong state: $signalingState (peerId: ${_peerId ?? "default"})',
+      );
+      return;
+    }
+
     print('[SFU] Handling renegotiation (peerId: ${_peerId ?? "default"})');
     try {
       await _pc!
