@@ -10,7 +10,10 @@ class WebRTCSFUService {
   String? _roomId;
   String? _channelId;
   String? _token;
-  String? _peerId; // custom peer id (dùng cho broadcast)
+  String? _peerId;
+
+  // Track audio element riêng cho mỗi instance — không xóa nhầm của instance khác
+  web.HTMLAudioElement? _audioElement;
 
   Function(String)? onStatusChange;
 
@@ -24,7 +27,7 @@ class WebRTCSFUService {
           .getUserMedia(constraints)
           .toDart;
       _localStream!.getAudioTracks().toDart.forEach((t) => t.enabled = false);
-      print('[SFU] Mic initialized');
+      print('[SFU] Mic initialized (peerId: ${_peerId ?? "default"})');
       return true;
     } catch (e) {
       print('[SFU] Mic error: $e');
@@ -32,8 +35,6 @@ class WebRTCSFUService {
     }
   }
 
-  // peerId: nếu null thì server dùng username từ JWT
-  // Truyền peerId = "username_broadcast" khi broadcast để tránh conflict
   Future<bool> connect(
     String token,
     String roomId,
@@ -53,31 +54,42 @@ class WebRTCSFUService {
       );
       _pc = web.RTCPeerConnection(config);
 
-      // Add local stream
       if (_localStream != null) {
         _localStream!.getTracks().toDart.forEach((track) {
           _pc!.addTrack(track, _localStream!);
         });
       }
 
-      // Receive audio from server
+      // Tạo audio element 1 lần, reuse khi có track mới
       _pc!.ontrack = (web.RTCTrackEvent event) {
-        print('[SFU] Got remote track!');
+        print('[SFU] Got remote track! (peerId: ${_peerId ?? "default"})');
         final streams = event.streams.toDart;
         if (streams.isNotEmpty) {
-          final audioEl = web.HTMLAudioElement();
-          audioEl.srcObject = streams[0];
-          audioEl.autoplay = true;
-          web.document.body!.append(audioEl);
+          if (_audioElement == null) {
+            // Tạo audio element mới với ID unique theo peerId
+            _audioElement = web.HTMLAudioElement();
+            _audioElement!.autoplay = true;
+            web.document.body!.append(_audioElement!);
+            print(
+              '[SFU] Created audio element for peerId: ${_peerId ?? "default"}',
+            );
+          }
+          // Reuse audio element đã có — chỉ update srcObject
+          _audioElement!.srcObject = streams[0];
+          print(
+            '[SFU] Audio stream updated for peerId: ${_peerId ?? "default"}',
+          );
         }
       }.toJS;
 
       _pc!.onconnectionstatechange = (web.Event event) {
-        print('[SFU] Connection state: ${_pc!.connectionState}');
-        onStatusChange?.call(_pc!.connectionState ?? '');
+        final state = _pc?.connectionState ?? '';
+        print(
+          '[SFU] Connection state: $state (peerId: ${_peerId ?? "default"})',
+        );
+        onStatusChange?.call(state);
       }.toJS;
 
-      // Create offer
       final offer = await _pc!.createOffer().toDart;
       final offerSdp = offer?.sdp ?? '';
       await _pc!
@@ -86,14 +98,12 @@ class WebRTCSFUService {
           )
           .toDart;
 
-      // Build URL — thêm peer_id nếu có
       var offerUrl =
           '${Constants.baseUrl}/sfu/offer?room_id=$roomId&channel_id=$channelId';
       if (peerId != null && peerId.isNotEmpty) {
         offerUrl += '&peer_id=$peerId';
       }
 
-      // Send offer to server
       final res = await http.post(
         Uri.parse(offerUrl),
         headers: {
@@ -109,14 +119,13 @@ class WebRTCSFUService {
       }
 
       final data = jsonDecode(res.body);
-      // Set answer from server
       await _pc!
           .setRemoteDescription(
             web.RTCSessionDescriptionInit(sdp: data['sdp'], type: data['type']),
           )
           .toDart;
 
-      print('[SFU] Connected to SFU server (peerId: ${peerId ?? "default"})');
+      print('[SFU] Connected to SFU (peerId: ${peerId ?? "default"})');
       return true;
     } catch (e) {
       print('[SFU] Connect error: $e');
@@ -126,18 +135,17 @@ class WebRTCSFUService {
 
   void startTalking() {
     _localStream?.getAudioTracks().toDart.forEach((t) => t.enabled = true);
-    print('[SFU] Mic ENABLED');
+    print('[SFU] Mic ENABLED (peerId: ${_peerId ?? "default"})');
   }
 
   void stopTalking() {
     _localStream?.getAudioTracks().toDart.forEach((t) => t.enabled = false);
-    print('[SFU] Mic DISABLED');
+    print('[SFU] Mic DISABLED (peerId: ${_peerId ?? "default"})');
   }
 
   Future<void> disconnect() async {
     if (_token != null && _roomId != null && _channelId != null) {
       try {
-        // Nếu có peerId riêng thì báo server xóa đúng peer đó
         var leaveUrl =
             '${Constants.baseUrl}/sfu/leave?room_id=$_roomId&channel_id=$_channelId';
         if (_peerId != null && _peerId!.isNotEmpty) {
@@ -151,27 +159,21 @@ class WebRTCSFUService {
         print('[SFU] Leave error: $e');
       }
     }
+
     _pc?.close();
     _pc = null;
 
-    // Remove audio elements
-    final body = web.document.body;
-    if (body != null) {
-      final audioEls = body.querySelectorAll('audio');
-      final length = audioEls.length;
-      for (int i = length - 1; i >= 0; i--) {
-        final el = audioEls.item(i);
-        if (el != null) {
-          el.parentNode?.removeChild(el);
-        }
-      }
-    }
+    // Chỉ xóa audio element của chính instance này
+    // không xóa audio của các SFU instance khác (broadcast)
+    _audioElement?.parentNode?.removeChild(_audioElement!);
+    _audioElement = null;
+
     print('[SFU] Disconnected (peerId: ${_peerId ?? "default"})');
   }
 
   Future<void> handleRenegotiate(String offerSdp) async {
     if (_pc == null || _token == null) return;
-    print('[SFU] Handling renegotiation offer from server');
+    print('[SFU] Handling renegotiation (peerId: ${_peerId ?? "default"})');
     try {
       await _pc!
           .setRemoteDescription(
