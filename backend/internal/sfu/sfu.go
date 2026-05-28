@@ -115,7 +115,7 @@ func (r *SFURoom) CreatePeer(peerID string) (*Peer, error) {
 						log.Printf("[SFU] Track %s ended\n", peerID)
 						return
 					}
-					//forward tới AudioTrack của NGƯỜI KHÁC (không phải của chính sender)
+					// FIX BUG 2: forward tới AudioTrack của NGƯỜI KHÁC (không phải của chính sender)
 					r.forwardRTP(peerID, pkt)
 				}
 			}()
@@ -159,6 +159,7 @@ func (r *SFURoom) CreatePeer(peerID string) (*Peer, error) {
 	r.mutex.RUnlock()
 
 	// Add AudioTrack của peer mới vào PC của tất cả existing peers (để họ nghe được peer mới)
+	// trigger renegotiate SAU KHI đã add track xong
 	r.mutex.RLock()
 	existingPeers := make([]*Peer, 0)
 	for id, ep := range r.Peers {
@@ -194,7 +195,7 @@ func (r *SFURoom) CreatePeer(peerID string) (*Peer, error) {
 			}
 			<-webrtc.GatheringCompletePromise(ep.PeerConnection)
 
-			// FIX BUG 1: dùng r.OnRenegotiate thay vì capture lúc khởi tạo
+			// dùng r.OnRenegotiate thay vì capture lúc khởi tạo
 			// vì OnRenegotiate được set SAU khi CreatePeer được gọi
 			r.mutex.RLock()
 			cb := r.OnRenegotiate
@@ -222,6 +223,11 @@ func (r *SFURoom) RemovePeer(peerID string) {
 		log.Printf("[SFU] Peer %s left room %s\n", peerID, r.ID)
 	}
 }
+
+// forwardRTP ghi vào AudioTrack của NGƯỜI NHẬN, không phải sender
+// AudioTrack của peer X = track dùng để send audio của X tới người khác
+// Khi X nói → ta cần ghi vào AudioTrack của X → các peer khác đang subscribe track này sẽ nghe được
+// KHÔNG ghi vào AudioTrack của receiver (sẽ gây echo)
 func (r *SFURoom) forwardRTP(senderID string, packet *rtp.Packet) {
 	r.mutex.RLock()
 	sender, ok := r.Peers[senderID]
