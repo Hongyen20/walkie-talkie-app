@@ -22,7 +22,6 @@ class _RoomScreenState extends State<RoomScreen> {
   List<Channel> _channels = [];
   bool _isLoading = true;
 
-  // Broadcast — 1 WS + nhiều SFU (1 per channel)
   WebSocketService? _broadcastWs;
   final List<WebRTCSFUService> _broadcastSfuList = [];
   bool _isBroadcasting = false;
@@ -48,6 +47,7 @@ class _RoomScreenState extends State<RoomScreen> {
 
   Future<void> _teardownBroadcast() async {
     _broadcastWs?.disconnect();
+    _broadcastWs = null;
     for (final sfu in _broadcastSfuList) {
       await sfu.disconnect();
     }
@@ -70,14 +70,11 @@ class _RoomScreenState extends State<RoomScreen> {
     }
   }
 
-  // Kết nối SFU vào TẤT CẢ channels trong room
   Future<void> _initBroadcast() async {
     if (_channels.isEmpty) return;
 
-    // peerId riêng cho broadcast — tránh conflict với PTT peer của Owner
     final broadcastPeerId = '${widget.user.username}_broadcast';
 
-    // Khởi tạo mic 1 lần bằng SFU đầu tiên
     final firstSfu = WebRTCSFUService();
     final micOk = await firstSfu.initLocalStream();
     if (!micOk) {
@@ -85,7 +82,6 @@ class _RoomScreenState extends State<RoomScreen> {
       return;
     }
 
-    // Kết nối SFU đầu tiên với peerId riêng
     final firstConnected = await firstSfu.connect(
       widget.user.token,
       widget.room.id,
@@ -98,7 +94,6 @@ class _RoomScreenState extends State<RoomScreen> {
     }
     _broadcastSfuList.add(firstSfu);
 
-    // Kết nối SFU cho các channel còn lại với cùng peerId riêng
     for (int i = 1; i < _channels.length; i++) {
       final sfu = WebRTCSFUService();
       await sfu.initLocalStream();
@@ -114,8 +109,6 @@ class _RoomScreenState extends State<RoomScreen> {
       }
     }
 
-    // WS dùng channel đầu tiên để gửi broadcast-start/stop signal
-    // Đồng thời handle renegotiate cho broadcast SFU connections
     _broadcastWs = WebSocketService();
     _broadcastWs!.onMessage = (msg) {
       final type = msg['type'] ?? '';
@@ -123,7 +116,6 @@ class _RoomScreenState extends State<RoomScreen> {
         final sdp = msg['message']?.toString() ?? '';
         final channelId = msg['channel_id']?.toString() ?? '';
         if (sdp.isEmpty) return;
-        // Tìm đúng SFU instance theo channel_id
         for (int i = 0; i < _channels.length; i++) {
           if (_channels[i].id == channelId && i < _broadcastSfuList.length) {
             print('[BROADCAST] Renegotiate for channel: ${_channels[i].name}');
@@ -133,7 +125,13 @@ class _RoomScreenState extends State<RoomScreen> {
         }
       }
     };
-    _broadcastWs!.connect(widget.user.token, widget.room.id, _channels[0].id);
+
+    // → không add vào online list, không gửi user-joined/left
+    _broadcastWs!.connectBroadcast(
+      widget.user.token,
+      widget.room.id,
+      _channels[0].id,
+    );
 
     setState(() => _broadcastReady = _broadcastSfuList.isNotEmpty);
     print(
@@ -147,7 +145,6 @@ class _RoomScreenState extends State<RoomScreen> {
       return;
     }
     setState(() => _isBroadcasting = true);
-    // Bật mic trên TẤT CẢ SFU connections
     for (final sfu in _broadcastSfuList) {
       sfu.startTalking();
     }
@@ -157,7 +154,6 @@ class _RoomScreenState extends State<RoomScreen> {
   void _stopBroadcast() {
     if (!_isBroadcasting) return;
     setState(() => _isBroadcasting = false);
-    // Tắt mic trên TẤT CẢ SFU connections
     for (final sfu in _broadcastSfuList) {
       sfu.stopTalking();
     }
@@ -502,7 +498,6 @@ class _RoomScreenState extends State<RoomScreen> {
     );
   }
 
-  // Owner quản lý members của channel
   Future<void> _manageChannelMembers(Channel ch) async {
     final roomMembers = await _roomService.getMembers(
       widget.user.token,
@@ -511,7 +506,6 @@ class _RoomScreenState extends State<RoomScreen> {
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        // ✅ dùng ctx thay vì _
         builder: (ctx, setStateDialog) => AlertDialog(
           backgroundColor: _white,
           shape: RoundedRectangleBorder(
@@ -616,9 +610,7 @@ class _RoomScreenState extends State<RoomScreen> {
                                 '${m['display_name']} added to channel',
                               );
                             }
-                            Navigator.pop(
-                              ctx,
-                            ); // ✅ FIX: dùng ctx thay vì context
+                            Navigator.pop(ctx);
                             _loadChannels();
                           },
                           child: Container(
@@ -653,8 +645,7 @@ class _RoomScreenState extends State<RoomScreen> {
           ),
           actions: [
             ElevatedButton(
-              onPressed: () =>
-                  Navigator.pop(ctx), // ✅ FIX: dùng ctx thay vì context
+              onPressed: () => Navigator.pop(ctx),
               style: ElevatedButton.styleFrom(
                 backgroundColor: _blue,
                 foregroundColor: _white,
@@ -681,7 +672,6 @@ class _RoomScreenState extends State<RoomScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Header ──────────────────────────────
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               child: Row(
@@ -794,7 +784,6 @@ class _RoomScreenState extends State<RoomScreen> {
               ),
             ),
 
-            // ── Broadcast button (owner only) ────────
             if (isOwner)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -858,7 +847,6 @@ class _RoomScreenState extends State<RoomScreen> {
                 ),
               ),
 
-            // ── Section title ────────────────────────
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
               child: Row(
@@ -882,7 +870,6 @@ class _RoomScreenState extends State<RoomScreen> {
               ),
             ),
 
-            // ── Channel list ─────────────────────────
             Expanded(
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator(color: _blue))
@@ -1019,7 +1006,6 @@ class _RoomScreenState extends State<RoomScreen> {
                                     ],
                                   ),
                                 ),
-                                // Owner: Manage + Delete | Member: arrow
                                 if (isOwner)
                                   Row(
                                     mainAxisSize: MainAxisSize.min,

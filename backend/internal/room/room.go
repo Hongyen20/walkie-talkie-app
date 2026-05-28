@@ -38,12 +38,10 @@ func (r *Room) AddClient(c *Client) {
 func (r *Room) RemoveClient(c *Client) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-
 	delete(r.Clients, c.Conn)
 	log.Printf("[ROOM %s] REMOVE %s\n", r.Name, c.ID)
 }
 
-// Broadcast just 1 channel
 func (r *Room) BroadcastToChannel(sender *Client, channelID string, msg []byte) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -53,17 +51,14 @@ func (r *Room) BroadcastToChannel(sender *Client, channelID string, msg []byte) 
 		if client.ID == sender.ID {
 			continue
 		}
-		// ✅ Chỉ gửi đến client cùng channel
 		if client.ChannelID != channelID {
 			continue
 		}
-
 		err := client.Conn.WriteMessage(websocket.TextMessage, msg)
 		if err != nil {
 			log.Println("[ERROR] Write:", err)
 			client.Conn.Close()
 			toRemove = append(toRemove, client)
-			continue
 		}
 	}
 	for _, client := range toRemove {
@@ -71,14 +66,18 @@ func (r *Room) BroadcastToChannel(sender *Client, channelID string, msg []byte) 
 	}
 }
 
-// Broadcast to ALL clients in room (all channels) — for owner broadcast
 func (r *Room) BroadcastToRoom(sender *Client, msg []byte) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
+	// deduplicate — mỗi username chỉ nhận 1 lần dù có nhiều connection
+	sent := make(map[string]bool)
 	var toRemove []*Client
 	for _, client := range r.Clients {
 		if client.ID == sender.ID {
+			continue
+		}
+		if sent[client.ID] {
 			continue
 		}
 		err := client.Conn.WriteMessage(websocket.TextMessage, msg)
@@ -86,7 +85,9 @@ func (r *Room) BroadcastToRoom(sender *Client, msg []byte) {
 			log.Println("[ERROR] BroadcastToRoom write:", err)
 			client.Conn.Close()
 			toRemove = append(toRemove, client)
+			continue
 		}
+		sent[client.ID] = true
 	}
 	for _, client := range toRemove {
 		delete(r.Clients, client.Conn)
@@ -105,7 +106,6 @@ func (r *Room) SendTo(targetID string, msg []byte) error {
 	return fmt.Errorf("Client %s not found", targetID)
 }
 
-// Get list of IDs clients (notify when someone join)
 func (r *Room) GetClientIDs() []string {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -117,9 +117,24 @@ func (r *Room) GetClientIDs() []string {
 	return ids
 }
 
-// RoomManager
+// deduplicate — mỗi username chỉ xuất hiện 1 lần dù có nhiều WS connection
+func (r *Room) GetClientIDsByChannel(channelID string) []string {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	seen := make(map[string]bool)
+	ids := make([]string, 0)
+	for _, client := range r.Clients {
+		if client.ChannelID == channelID && !seen[client.ID] {
+			seen[client.ID] = true
+			ids = append(ids, client.ID)
+		}
+	}
+	return ids
+}
+
 type RoomManager struct {
-	rooms map[string]*Room //Key: roomID
+	rooms map[string]*Room
 	mutex sync.Mutex
 }
 
@@ -129,7 +144,6 @@ func NewRoomManager() *RoomManager {
 	}
 }
 
-// Get room if u have ID, create a new one if u don't have
 func (m *RoomManager) GetOrCreate(roomID string) *Room {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
@@ -139,11 +153,10 @@ func (m *RoomManager) GetOrCreate(roomID string) *Room {
 	}
 	r := NewRoom(roomID)
 	m.rooms[roomID] = r
-	log.Printf("[MANAGER] Created room %s/n", roomID)
+	log.Printf("[MANAGER] Created room %s\n", roomID)
 	return r
 }
 
-// Delete room if noone in room
 func (m *RoomManager) CleanIfEmpty(roomID string) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
@@ -153,7 +166,7 @@ func (m *RoomManager) CleanIfEmpty(roomID string) {
 		r.mutex.Unlock()
 		if count == 0 {
 			delete(m.rooms, roomID)
-			log.Printf("[MANAGER] Removed empty room &s\n", roomID)
+			log.Printf("[MANAGER] Removed empty room %s\n", roomID)
 		}
 	}
 }
@@ -174,18 +187,4 @@ func (m *RoomManager) SendToUser(username string, msg []byte) {
 		}
 		r.mutex.Unlock()
 	}
-}
-
-// Get list of IDs clients filtered by channelID
-func (r *Room) GetClientIDsByChannel(channelID string) []string {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	ids := make([]string, 0)
-	for _, client := range r.Clients {
-		if client.ChannelID == channelID {
-			ids = append(ids, client.ID)
-		}
-	}
-	return ids
 }

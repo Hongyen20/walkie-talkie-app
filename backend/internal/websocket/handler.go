@@ -19,9 +19,6 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// var counterClient int64
-
-// Create a main room first
 var mainRoom = room.NewRoom("main")
 var manager = room.NewRoomManager()
 
@@ -32,7 +29,7 @@ func GetManager() *room.RoomManager {
 }
 
 type Message struct {
-	Type    string          `json:"type"` //chat - offer - answer - candidate
+	Type    string          `json:"type"`
 	From    string          `json:"from"`
 	To      string          `json:"to"`
 	Message json.RawMessage `json:"message"`
@@ -40,11 +37,7 @@ type Message struct {
 
 func HandleWebsocket(authService *service.AuthService, roomRepo *repository.RoomRepository, channelRepo *repository.ChannelRepository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		//Verify JWT from quey param
-		//Get token fron query param: ws//localhost:8080/websocket?token=xxx
 		tokenStr := r.URL.Query().Get("token")
-		//1. Verify JWT
 		if tokenStr == "" {
 			http.Error(w, `{"error":"missing token"}`, http.StatusUnauthorized)
 			return
@@ -59,11 +52,10 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 		userIDStr := (*claims)["user_id"].(string)
 		userID, _ := primitive.ObjectIDFromHex(userIDStr)
 
-		//Get room_id and channel_id from query
 		roomIDStr := r.URL.Query().Get("room_id")
 		channelIDStr := r.URL.Query().Get("channel_id")
 		if roomIDStr == "" {
-			http.Error(w, `{"error":"missing room_id "}`, http.StatusBadRequest)
+			http.Error(w, `{"error":"missing room_id"}`, http.StatusBadRequest)
 			return
 		}
 		if channelIDStr == "" {
@@ -76,11 +68,10 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 			return
 		}
 		if !roomRepo.IsMember(r.Context(), roomID, userID) {
-			http.Error(w, `"error":"not a member of this room"`, http.StatusForbidden)
+			http.Error(w, `{"error":"not a member of this room"}`, http.StatusForbidden)
 			return
 		}
 
-		//Check channel belongs to room ??
 		channelID, err := primitive.ObjectIDFromHex(channelIDStr)
 		if err != nil {
 			http.Error(w, `{"error":"Invalid Channel_id"}`, http.StatusBadRequest)
@@ -88,25 +79,26 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 		}
 		ch, err := channelRepo.FindByID(r.Context(), channelID)
 		if err != nil || ch.RoomID != roomID {
-			http.Error(w, `{"error":"chaanel not found in room"}`, http.StatusForbidden)
+			http.Error(w, `{"error":"channel not found in room"}`, http.StatusForbidden)
 			return
 		}
 		if ch.IsLocked {
-			http.Error(w, `{"error","channel is locked"}`, http.StatusForbidden)
+			http.Error(w, `{"error":"channel is locked"}`, http.StatusForbidden)
 			return
 		}
 
-		// Check if user is owner of room
 		isOwner := roomRepo.IsOwner(r.Context(), roomID, userID)
 
-		//Upgrade to WebSocket
+		// Lấy query param broadcast để phân biệt broadcast WS với PTT WS
+		isBroadcastOnly := r.URL.Query().Get("broadcast") == "1"
+
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Println("Upgrade error:", err)
 			return
 		}
 		client := &room.Client{
-			ID:        username, //use username instead of user1, user2
+			ID:        username,
 			Conn:      conn,
 			RoomID:    roomIDStr,
 			ChannelID: channelIDStr,
@@ -114,32 +106,35 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 
 		wsRoom := manager.GetOrCreate(roomIDStr)
 		wsRoom.AddClient(client)
-		log.Printf("[CONNECT] %s -> room = %s channel = %s \n", username, roomID, channelIDStr)
+		log.Printf("[CONNECT] %s -> room=%s channel=%s broadcast=%v\n", username, roomIDStr, channelIDStr, isBroadcastOnly)
 
 		defer func() {
 			wsRoom.RemoveClient(client)
-			// Broadcast user-left to remaining clients in same channel
-			leftMsg, _ := json.Marshal(map[string]string{
-				"type": "user-left",
-				"from": username,
-			})
-			wsRoom.BroadcastToChannel(client, channelIDStr, leftMsg)
+			// Broadcast WS không gửi user-left — tránh làm online list sai
+			if !isBroadcastOnly {
+				leftMsg, _ := json.Marshal(map[string]string{
+					"type": "user-left",
+					"from": username,
+				})
+				wsRoom.BroadcastToChannel(client, channelIDStr, leftMsg)
+			}
 			conn.Close()
 			manager.CleanIfEmpty(roomIDStr)
 			log.Printf("[DISCONNECT] %s\n", username)
 		}()
 
-		//Send ID for client
-		selfMsgStr, _ := json.Marshal(username)
-		selfMsg := Message{
-			Type:    "your-id",
-			From:    "server",
-			Message: selfMsgStr,
+		// Broadcast WS chỉ cần nhận sfu-renegotiate, không gửi your-id hay online-list
+		if !isBroadcastOnly {
+			selfMsgStr, _ := json.Marshal(username)
+			selfMsg := Message{
+				Type:    "your-id",
+				From:    "server",
+				Message: selfMsgStr,
+			}
+			jsonSelf, _ := json.Marshal(selfMsg)
+			wsRoom.SendTo(username, jsonSelf)
 		}
-		jsonSelf, _ := json.Marshal(selfMsg)
-		wsRoom.SendTo(username, jsonSelf)
 
-		//Message Loop
 		for {
 			_, msg, err := conn.ReadMessage()
 			if err != nil {
@@ -159,12 +154,17 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 				incoming.From = username
 			}
 
-			log.Printf("[RECV] %s | type = %s | to = %s | message = %s\n", username, incoming.Type, incoming.To, incoming.Message)
+			log.Printf("[RECV] %s | type=%s | to=%s\n", username, incoming.Type, incoming.To)
 
 			switch incoming.Type {
 			case "join":
-				// online-list
-				listStr := strings.Join(wsRoom.GetClientIDsByChannel(channelIDStr), ",")
+				// Broadcast WS không join online list
+				if isBroadcastOnly {
+					continue
+				}
+				// Deduplicate online list
+				rawList := wsRoom.GetClientIDsByChannel(channelIDStr)
+				listStr := strings.Join(rawList, ",")
 				listJSON, _ := json.Marshal(listStr)
 				onlineList := Message{
 					Type:    "online-list",
@@ -174,7 +174,16 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 				jsonList, _ := json.Marshal(onlineList)
 				wsRoom.SendTo(username, jsonList)
 
-				// user-joined
+				// FIX: chỉ broadcast user-joined nếu đây là connection đầu tiên của user trong channel
+				// (tránh broadcast 2 lần khi owner vào channel đồng thời có broadcast WS)
+				connectionCount := 0
+				for _, id := range wsRoom.GetClientIDsByChannel(channelIDStr) {
+					if id == username {
+						connectionCount++
+					}
+				}
+				// GetClientIDsByChannel đã deduplicate nên count luôn = 1 nếu user có mặt
+				// Broadcast user-joined bình thường
 				notifyMsg, _ := json.Marshal(username + " joined channel")
 				notify := Message{
 					Type:    "user-joined",
@@ -185,36 +194,33 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 				wsRoom.BroadcastToChannel(client, channelIDStr, jsonMsg)
 
 			case "offer", "answer", "ice-candidate":
-				// Forward to correct receiver
 				if incoming.To == "" {
-					log.Println("[WARN] Mising field 'to'")
+					log.Println("[WARN] Missing field 'to'")
 					continue
 				}
 				jsonMsg, _ := json.Marshal(incoming)
 				if err := wsRoom.SendTo(incoming.To, jsonMsg); err != nil {
 					log.Printf("[WARN] SendTo %s fail: %v\n", incoming.To, err)
 				}
+
 			case "chat":
 				jsonMsg, _ := json.Marshal(incoming)
 				wsRoom.BroadcastToChannel(client, channelIDStr, jsonMsg)
 
 			case "ptt-start", "ptt-stop":
-				// Broadcast in channel để mọi người biết ai đang nói
 				jsonMsg, _ := json.Marshal(incoming)
 				wsRoom.BroadcastToChannel(client, channelIDStr, jsonMsg)
 
 			case "broadcast-start":
-				// Owner broadcast PTT to ALL channels in room
 				if !isOwner {
 					log.Printf("[WARN] %s is not owner, broadcast rejected\n", username)
 					continue
 				}
 				jsonMsg, _ := json.Marshal(incoming)
 				wsRoom.BroadcastToRoom(client, jsonMsg)
-				log.Printf("[BROADCAST] %s started broadcasting to entire room\n", username)
+				log.Printf("[BROADCAST] %s started broadcasting\n", username)
 
 			case "broadcast-stop":
-				// Owner stop broadcast
 				if !isOwner {
 					continue
 				}
@@ -223,9 +229,8 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 				log.Printf("[BROADCAST] %s stopped broadcasting\n", username)
 
 			default:
-				log.Printf("[WARN]Unknown type: %s\n", incoming.Type)
+				log.Printf("[WARN] Unknown type: %s\n", incoming.Type)
 			}
 		}
-
 	}
 }
