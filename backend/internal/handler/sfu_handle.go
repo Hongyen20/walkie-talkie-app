@@ -33,9 +33,6 @@ func getUsernameFromContext(r *http.Request) (string, bool) {
 	return username, ok
 }
 
-// resolvePeerID: dùng peer_id từ query nếu có, fallback về username
-// Dùng để broadcast có thể dùng "username_broadcast" thay vì "username"
-// tránh conflict với PTT peer connection đang tồn tại
 func resolvePeerID(r *http.Request, username string) string {
 	peerID := r.URL.Query().Get("peer_id")
 	if peerID != "" {
@@ -44,10 +41,8 @@ func resolvePeerID(r *http.Request, username string) string {
 	return username
 }
 
-// POST /sfu/offer?room_id=xxx&channel_id=xxx[&peer_id=xxx]
+// POST /sfu/offer
 func (h *SFUHandler) HandleOffer(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[SFU] HandleOffer - Authorization: %s\n", r.Header.Get("Authorization"))
-
 	username, ok := getUsernameFromContext(r)
 	if !ok {
 		WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
@@ -79,24 +74,24 @@ func (h *SFUHandler) HandleOffer(w http.ResponseWriter, r *http.Request) {
 	roomKey := roomID + "_" + channelID
 	sfuRoom := h.manager.GetOrCreateRoom(roomKey)
 
-	if sfuRoom.OnRenegotiate == nil {
-		cID := channelID
-		sfuRoom.OnRenegotiate = func(pid string, sdp string) {
-			log.Printf("[SFU] Sending renegotiate to %s\n", pid)
-			if h.notifyFunc != nil {
-				wsTarget := strings.TrimSuffix(pid, "_broadcast")
-				log.Printf("[SFU] Renegotiate WS target: %s (from peerID: %s) channel: %s\n", wsTarget, pid, cID)
-				h.notifyFunc(wsTarget, map[string]interface{}{
-					"type":       "sfu-renegotiate",
-					"message":    sdp,
-					"channel_id": cID,
-				})
-			}
+	// Set OnRenegotiate mỗi lần offer — đảm bảo luôn có callback kể cả sau reconnect
+	cID := channelID
+	sfuRoom.OnRenegotiate = func(pid string, sdp string) {
+		log.Printf("[SFU] Sending renegotiate to %s\n", pid)
+		if h.notifyFunc != nil {
+			wsTarget := strings.TrimSuffix(pid, "_broadcast")
+			log.Printf("[SFU] Renegotiate WS target: %s (from peerID: %s) channel: %s\n", wsTarget, pid, cID)
+			h.notifyFunc(wsTarget, map[string]interface{}{
+				"type":       "sfu-renegotiate",
+				"message":    sdp,
+				"channel_id": cID,
+			})
 		}
 	}
 
 	answerSDP, err := sfuRoom.HandleOffer(peerID, body.SDP)
 	if err != nil {
+		log.Printf("[SFU] HandleOffer error for %s: %v\n", peerID, err)
 		WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -107,7 +102,7 @@ func (h *SFUHandler) HandleOffer(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// POST /sfu/ice?room_id=xxx&channel_id=xxx[&peer_id=xxx]
+// POST /sfu/ice
 func (h *SFUHandler) HandleICE(w http.ResponseWriter, r *http.Request) {
 	username, ok := getUsernameFromContext(r)
 	if !ok {
@@ -140,7 +135,7 @@ func (h *SFUHandler) HandleICE(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, map[string]string{"message": "ok"})
 }
 
-// DELETE /sfu/leave?room_id=xxx&channel_id=xxx[&peer_id=xxx]
+// DELETE /sfu/leave
 func (h *SFUHandler) HandleLeave(w http.ResponseWriter, r *http.Request) {
 	username, ok := getUsernameFromContext(r)
 	if !ok {
@@ -160,7 +155,7 @@ func (h *SFUHandler) HandleLeave(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, map[string]string{"message": "left"})
 }
 
-// POST /sfu/renegotiate?room_id=xxx&channel_id=xxx[&peer_id=xxx]
+// POST /sfu/renegotiate
 func (h *SFUHandler) HandleRenegotiate(w http.ResponseWriter, r *http.Request) {
 	username, ok := getUsernameFromContext(r)
 	if !ok {
@@ -185,7 +180,21 @@ func (h *SFUHandler) HandleRenegotiate(w http.ResponseWriter, r *http.Request) {
 
 	peer, exists := sfuRoom.GetPeer(peerID)
 	if !exists {
-		WriteJSON(w, http.StatusNotFound, map[string]string{"error": "peer not found"})
+		// Peer không tồn tại — có thể đã reconnect và tạo peer mới
+		// Trả 200 để client không retry liên tục
+		log.Printf("[SFU] Renegotiate: peer %s not found (may have reconnected), ignoring\n", peerID)
+		WriteJSON(w, http.StatusOK, map[string]string{"message": "peer gone, ignored"})
+		return
+	}
+
+	// FIX: kiểm tra signaling state trước khi SetRemoteDescription
+	state := peer.PeerConnection.SignalingState()
+	log.Printf("[SFU] Renegotiate for %s — signaling state: %s\n", peerID, state)
+
+	if state != webrtc.SignalingStateHaveLocalOffer {
+		// Không ở trạng thái đúng — bỏ qua thay vì trả 500
+		log.Printf("[SFU] Renegotiate for %s skipped — wrong state: %s\n", peerID, state)
+		WriteJSON(w, http.StatusOK, map[string]string{"message": "wrong state, ignored"})
 		return
 	}
 
@@ -193,9 +202,11 @@ func (h *SFUHandler) HandleRenegotiate(w http.ResponseWriter, r *http.Request) {
 		Type: webrtc.SDPTypeAnswer,
 		SDP:  body.SDP,
 	}); err != nil {
+		log.Printf("[SFU] SetRemoteDescription error for %s: %v | state: %s\n", peerID, err, state)
 		WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
+	log.Printf("[SFU] Renegotiate OK for %s\n", peerID)
 	WriteJSON(w, http.StatusOK, map[string]string{"message": "ok"})
 }
