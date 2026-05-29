@@ -90,32 +90,35 @@ class _ChannelScreenState extends State<ChannelScreen> {
   }
 
   Future<void> _initWebRTC() async {
-    final ok = await _sfuService.initLocalStream();
-    if (!ok) {
-      setState(() => _webrtcReady = false);
-      _addLog('Microphone access denied');
-      return;
-    }
-
-    _sfuService.onStatusChange = (state) {
-      if (state == 'connected') {
-        setState(() => _webrtcReady = true);
-        _addLog('Connected to SFU');
-      } else if (state == 'failed' || state == 'disconnected') {
-        setState(() => _webrtcReady = false);
-        _addLog('SFU disconnected');
-      }
-    };
-
-    final connected = await _sfuService.connect(
-      widget.user.token,
-      widget.room.id,
-      widget.channel.id,
-    );
-
-    setState(() => _webrtcReady = connected);
-    _addLog(connected ? 'Microphone ready' : 'SFU connection failed');
+  final ok = await _sfuService.initLocalStream();
+  print('[CHANNEL] initLocalStream: $ok');
+  if (!ok) {
+    setState(() => _webrtcReady = false);
+    _addLog('Microphone access denied');
+    return;
   }
+
+  _sfuService.onStatusChange = (state) {
+    print('[CHANNEL] SFU status: $state');
+    if (state == 'connected') {
+      setState(() => _webrtcReady = true);
+      _addLog('Connected to SFU');
+    } else if (state == 'failed' || state == 'disconnected') {
+      setState(() => _webrtcReady = false);
+      _addLog('SFU disconnected');
+    }
+  };
+
+  print('[CHANNEL] Connecting to SFU room=${widget.room.id} channel=${widget.channel.id}');
+  final connected = await _sfuService.connect(
+    widget.user.token,
+    widget.room.id,
+    widget.channel.id,
+  );
+  print('[CHANNEL] SFU connect result: $connected');
+  setState(() => _webrtcReady = connected);
+  _addLog(connected ? 'Microphone ready' : 'SFU connection failed');
+}
 
   void _handleMessage(Map<String, dynamic> msg) {
     final type = msg['type'] ?? '';
