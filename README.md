@@ -1,102 +1,75 @@
-📡 Walkie-Talkie Realtime System (Push-to-Talk using WebRTC)
+# 📡 Walkie-Talkie Realtime System (Push-to-Talk using WebRTC)
 
-A real-time voice communication system inspired by walkie-talkie devices, built with Flutter, WebRTC, WebSocket, and a Golang backend. The system enables low-latency push-to-talk (PTT) voice communication through room and channel-based architecture.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Go Version](https://img.shields.io/badge/Go-1.20+-00ADD8?style=flat&logo=go)](https://golang.org)
+[![Flutter Version](https://img.shields.io/badge/Flutter-3.x-02569B?style=flat&logo=flutter)](https://flutter.dev)
 
-🚀 Features
-🔐 JWT-based authentication
-🏠 Room & Channel management
-🎙️ Push-To-Talk (PTT) real-time voice streaming
-📡 WebRTC peer-to-peer audio communication
-🔄 WebSocket-based signaling server
-👥 Multi-user voice channels
-🌐 STUN/TURN support for NAT traversal
-⚡ Low-latency audio transmission
-🏗️ System Architecture
-Flutter Client
-     │
-     │ WebSocket (Signaling)
-     ▼
-Golang Backend Server
-     │
-     ├── Authentication (JWT)
-     ├── Room / Channel Management
-     └── WebRTC Signaling Handler
-     │
-     ▼
-WebRTC Peer-to-Peer Audio Stream
-🧰 Tech Stack
-Frontend
-Flutter
-Dart
-WebRTC plugin
-WebSocket client
-Backend
-Golang (Go)
-Gin / Fiber (depending on implementation)
-WebSocket
-JWT Authentication
-MongoDB
-Infrastructure
-MongoDB Atlas
-STUN: Google STUN servers
-TURN: Coturn (optional)
-Docker (deployment support)
-📁 Project Structure
-walkie-talkie/
-│
-├── backend/
-│   ├── controllers/
-│   ├── services/
-│   ├── models/
-│   ├── sockets/
-│   └── main.go
-│
-├── frontend/
-│   ├── lib/
-│   │   ├── screens/
-│   │   ├── services/
-│   │   ├── widgets/
-│   │   └── webrtc/
-│
-├── docker/
-└── README.md
+A real-time voice communication system inspired by traditional walkie-talkie devices. Built with **Flutter**, **WebRTC**, **WebSockets**, and a concurrent **Golang** backend, this system enables ultra-low latency Push-to-Talk (PTT) communication through a structured room and channel-based architecture.
 
+---
 
-🌐 Deployment
+## 🚀 Features
 
-Backend can be deployed using:
+* **Secure Authentication:** JWT-based user login and session management.
+* **Room & Channel Management:** Multi-tenant rooms with dedicated sub-channels for structured team communication.
+* **True Push-To-Talk (PTT):** Instant, half-duplex style real-time voice streaming triggered by button hold.
+* **WebRTC Audio Pipeline:** High-fidelity, low-latency peer-to-peer audio communication.
+* **WebSocket Signaling:** Robust signaling server built in Go to handle state synchronization and WebRTC negotiation.
+* **NAT Traversal Ready:** Integrated STUN/TURN server support to ensure seamless connectivity across different network topologies.
 
-AWS EC2
-DigitalOcean
-VPS (Ubuntu Server)
+---
 
-Frontend:
+## 🏗️ System Architecture
+┌─────────────────────────┐
+                   │     Flutter Client      │
+                   └────────────┬────────────┘
+                                │
+                                │ WebSocket (Signaling & Events)
+                                ▼
+                   ┌─────────────────────────┐
+                   │  Golang Backend Server  │
+                   │ ─────────────────────── │
+                   │  • JWT Authentication   │
+                   │  • Room/Channel Manager │
+                   │  • Signaling Handler    │
+                   └────────────┬────────────┘
+                                │
+                                ▼
+           ┌─────────────────────────────────────────┐
+           │   WebRTC Peer-to-Peer Audio Streaming   │
+           └─────────────────────────────────────────┘
+---
 
-Flutter Mobile App (Android/iOS)
-Flutter Web (optional build)
-📸 Screenshots
+## 🧰 Tech Stack
 
-Add application screenshots here:
+### Frontend
+* **Framework:** Flutter (Dart)
+* **Core Packages:** `flutter_webrtc`, `web_socket_channel`, `flutter_secure_storage`
 
-Login Screen
-Room List
-Channel Interface
-Push-To-Talk Interface
-📌 Key Concepts
-WebRTC peer-to-peer communication
-WebSocket signaling server
-Push-To-Talk mechanism
-Real-time voice streaming
-Room-based communication model
-Golang backend concurrency handling
-⚠️ Notes
-WebRTC requires STUN/TURN for reliable NAT traversal
-TURN server is recommended for production environments
-Audio latency depends on network conditions
+### Backend
+* **Language:** Golang (Go)
+* **Framework:** Gin Gonic / Fiber
+* **Protocols:** WebSockets (`gorilla/websocket`), WebRTC
+* **Database:** MongoDB (with `mongo-go-driver`)
+
+### Infrastructure & DevOps
+* **Database Hosting:** MongoDB Atlas
+* **NAT Traversal:** Google STUN servers / Coturn (TURN server for production)
+* **Containerization:** Docker & Docker Compose
+
+---
+🌐 Production Deployment Considerations
+Backend Deployment: Highly recommended to host on AWS EC2, DigitalOcean VPS, or any Ubuntu Server with proper reverse proxy setups.
+
+NAT Traversal (Crucial): While Google STUN servers work fine for local testing, a dedicated Coturn (TURN Server) deployment is highly recommended for production to guarantee connection establishment across symmetric NATs and strict corporate firewalls.
+
+Audio Quality: Voice performance is highly correlated with network stability. Implementing Opus codec fine-tuning within the SDP exchange is recommended for low-bandwidth environments.
 👨‍💻 Author
-
 Walkie-Talkie Realtime System
-Built as an academic project focusing on real-time communication systems using WebRTC and Golang.
+
+Developed as an academic project focused on real-time systems, concurrency handling in Go, and peer-to-peer mobile communications.
 
 📄 License
-For educational and research purposes only.
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+For educational and academic purposes only.
