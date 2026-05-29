@@ -20,24 +20,24 @@ A real-time voice communication system inspired by traditional walkie-talkie dev
 ---
 
 ## 🏗️ System Architecture
-┌─────────────────────────┐
-                   │     Flutter Client      │
-                   └────────────┬────────────┘
-                                │
-                                │ WebSocket (Signaling & Events)
-                                ▼
-                   ┌─────────────────────────┐
-                   │  Golang Backend Server  │
-                   │ ─────────────────────── │
-                   │  • JWT Authentication   │
-                   │  • Room/Channel Manager │
-                   │  • Signaling Handler    │
-                   └────────────┬────────────┘
-                                │
-                                ▼
-           ┌─────────────────────────────────────────┐
-           │   WebRTC Peer-to-Peer Audio Streaming   │
-           └─────────────────────────────────────────┘
+                       ┌─────────────────────────┐
+                       │     Flutter Client      │
+                       └────────────┬────────────┘
+                                    │
+                                    │ WebSocket (Signaling & Events)
+                                    ▼
+                       ┌─────────────────────────┐
+                       │  Golang Backend Server  │
+                       │ ─────────────────────── │
+                       │  • JWT Authentication   │
+                       │  • Room/Channel Manager │
+                       │  • Signaling Handler    │
+                       └────────────┬────────────┘
+                                    │
+                                    ▼
+               ┌─────────────────────────────────────────┐
+               │   WebRTC Peer-to-Peer Audio Streaming   │
+               └─────────────────────────────────────────┘
 ---
 
 ## 🧰 Tech Stack
@@ -54,22 +54,17 @@ A real-time voice communication system inspired by traditional walkie-talkie dev
 
 ### Infrastructure & DevOps
 * **Database Hosting:** MongoDB Atlas
-* **NAT Traversal:** Google STUN servers / Coturn (TURN server for production)
+* **NAT Traversal:** Google STUN servers(TURN server for production)
 * **Containerization:** Docker & Docker Compose
 
 ---
-🌐 Production Deployment Considerations
-Backend Deployment: Highly recommended to host on AWS EC2, DigitalOcean VPS, or any Ubuntu Server with proper reverse proxy setups.
-
-NAT Traversal (Crucial): While Google STUN servers work fine for local testing, a dedicated Coturn (TURN Server) deployment is highly recommended for production to guarantee connection establishment across symmetric NATs and strict corporate firewalls.
-
-Audio Quality: Voice performance is highly correlated with network stability. Implementing Opus codec fine-tuning within the SDP exchange is recommended for low-bandwidth environments.
-👨‍💻 Author
-Walkie-Talkie Realtime System
-
+## 🌐 Production Deployment Considerations
+### Backend Deployment: 
+* Highly recommended to host on AWS EC2, DigitalOcean VPS, or any Ubuntu Server with proper reverse proxy setups.
+* NAT Traversal (Crucial): While Google STUN servers work fine for local testing, a dedicated Coturn (TURN Server) deployment is highly recommended for production to guarantee connection establishment across symmetric NATs and strict corporate firewalls.
+* Audio Quality: Voice performance is highly correlated with network stability. Implementing Opus codec fine-tuning within the SDP exchange is recommended for low-bandwidth environments.
+## 👨‍💻 Author
 Developed as an academic project focused on real-time systems, concurrency handling in Go, and peer-to-peer mobile communications.
 
-📄 License
-This project is licensed under the MIT License - see the LICENSE file for details.
-
+## 📄 License
 For educational and academic purposes only.
