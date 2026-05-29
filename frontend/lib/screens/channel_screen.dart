@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../models/user.dart';
 import '../models/room.dart';
@@ -28,14 +27,15 @@ class _ChannelScreenState extends State<ChannelScreen> {
   final _wsService = WebSocketService();
   final _sfuService = WebRTCSFUService();
 
-  // Channel members (từ DB — chỉ member được add vào channel này)
   List<Map<String, dynamic>> _channelMembers = [];
-  // Online users (từ WebSocket — chỉ user đang online trong channel này)
   List<String> _onlineUsers = [];
   bool _isTalking = false;
   bool _webrtcReady = false;
   String _talkingUser = '--';
   List<String> _activityLog = [];
+
+  // peerID của PTT connection — dùng username (không có _broadcast suffix)
+  late String _myPeerID;
 
   static const _bg = Color(0xFFF0F4FF);
   static const _blue = Color(0xFF1A56DB);
@@ -46,6 +46,8 @@ class _ChannelScreenState extends State<ChannelScreen> {
   @override
   void initState() {
     super.initState();
+    // PTT peer ID = username (không có _broadcast suffix)
+    _myPeerID = widget.user.username;
     _loadChannelMembers();
     _connectWebSocket();
     _initWebRTC();
@@ -58,25 +60,24 @@ class _ChannelScreenState extends State<ChannelScreen> {
     super.dispose();
   }
 
-  // Chỉ load members của channel này, không phải toàn room
   Future<void> _loadChannelMembers() async {
     final allRoomMembers = await _roomService.getMembers(
       widget.user.token,
       widget.room.id,
     );
     final channelMemberIds = widget.channel.members.toSet();
-    print("[DEBUG] channel.members: $channelMemberIds");
+    print('[DEBUG] channel.members: $channelMemberIds');
     print(
-      "[DEBUG] allRoomMembers user_ids: ${allRoomMembers.map((m) => m["user_id"]).toList()}",
+      '[DEBUG] allRoomMembers user_ids: ${allRoomMembers.map((m) => m["user_id"]).toList()}',
     );
     final filtered = allRoomMembers.where((m) {
-      final uid = (m["user_id"] ?? "").toString().trim();
-      final role = m["role"] ?? "";
-      if (role == "owner") return true;
+      final uid = (m['user_id'] ?? '').toString().trim();
+      final role = m['role'] ?? '';
+      if (role == 'owner') return true;
       return channelMemberIds.any((id) => id.trim() == uid);
     }).toList();
     print(
-      "[DEBUG] filtered: ${filtered.map((m) => m["display_name"]).toList()}",
+      '[DEBUG] filtered: ${filtered.map((m) => m["display_name"]).toList()}',
     );
     setState(() => _channelMembers = filtered);
   }
@@ -90,39 +91,62 @@ class _ChannelScreenState extends State<ChannelScreen> {
   }
 
   Future<void> _initWebRTC() async {
-  final ok = await _sfuService.initLocalStream();
-  print('[CHANNEL] initLocalStream: $ok');
-  if (!ok) {
-    setState(() => _webrtcReady = false);
-    _addLog('Microphone access denied');
-    return;
+    final ok = await _sfuService.initLocalStream();
+    print('[CHANNEL] initLocalStream: $ok');
+    if (!ok) {
+      setState(() => _webrtcReady = false);
+      _addLog('Microphone access denied');
+      return;
+    }
+
+    _sfuService.onStatusChange = (state) {
+      print('[CHANNEL] SFU status: $state');
+      if (state == 'connected') {
+        setState(() => _webrtcReady = true);
+        _addLog('Connected to SFU');
+      } else if (state == 'failed' || state == 'disconnected') {
+        setState(() => _webrtcReady = false);
+        _addLog('SFU disconnected');
+        // Auto reconnect sau 2 giây
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted && !_webrtcReady) {
+            _reconnectWebRTC();
+          }
+        });
+      }
+    };
+
+    print(
+      '[CHANNEL] Connecting to SFU room=${widget.room.id} channel=${widget.channel.id} peerID=$_myPeerID',
+    );
+    final connected = await _sfuService.connect(
+      widget.user.token,
+      widget.room.id,
+      widget.channel.id,
+      // Không truyền peerId → server dùng username từ JWT
+    );
+    print('[CHANNEL] SFU connect result: $connected');
+    setState(() => _webrtcReady = connected);
+    _addLog(connected ? 'Microphone ready' : 'SFU connection failed');
   }
 
-  _sfuService.onStatusChange = (state) {
-    print('[CHANNEL] SFU status: $state');
-    if (state == 'connected') {
-      setState(() => _webrtcReady = true);
-      _addLog('Connected to SFU');
-    } else if (state == 'failed' || state == 'disconnected') {
-      setState(() => _webrtcReady = false);
-      _addLog('SFU disconnected');
+  Future<void> _reconnectWebRTC() async {
+    print('[CHANNEL] Reconnecting WebRTC...');
+    final connected = await _sfuService.connect(
+      widget.user.token,
+      widget.room.id,
+      widget.channel.id,
+    );
+    print('[CHANNEL] Reconnect result: $connected');
+    if (mounted) {
+      setState(() => _webrtcReady = connected);
     }
-  };
-
-  print('[CHANNEL] Connecting to SFU room=${widget.room.id} channel=${widget.channel.id}');
-  final connected = await _sfuService.connect(
-    widget.user.token,
-    widget.room.id,
-    widget.channel.id,
-  );
-  print('[CHANNEL] SFU connect result: $connected');
-  setState(() => _webrtcReady = connected);
-  _addLog(connected ? 'Microphone ready' : 'SFU connection failed');
-}
+  }
 
   void _handleMessage(Map<String, dynamic> msg) {
     final type = msg['type'] ?? '';
     final from = msg['from'] ?? '';
+    print('[CHANNEL WS] Received type: $type from: $from');
 
     switch (type) {
       case 'your-id':
@@ -136,7 +160,6 @@ class _ChannelScreenState extends State<ChannelScreen> {
         break;
 
       case 'online-list':
-        // Backend đã filter theo channel — chỉ nhận user cùng channel
         final raw = msg['message'];
         final listStr = raw is String ? raw : raw.toString();
         final list = listStr.split(',').where((s) => s.isNotEmpty).toList();
@@ -183,16 +206,38 @@ class _ChannelScreenState extends State<ChannelScreen> {
 
       case 'sfu-renegotiate':
         final newSdp = msg['message']?.toString() ?? '';
-        // channel_id cho biết renegotiate này thuộc channel nào
-        // channel_screen chỉ cần xử lý nếu đúng channel của mình
         final renegChannelId = msg['channel_id']?.toString() ?? '';
-        if (newSdp.isNotEmpty) {
-          if (renegChannelId.isEmpty || renegChannelId == widget.channel.id) {
-            _sfuService.handleRenegotiate(newSdp);
-          }
-          // Nếu channel_id khác → đây là renegotiate cho broadcast SFU
-          // room_screen sẽ xử lý qua WebSocket của nó
+
+        print(
+          '[CHANNEL WS] sfu-renegotiate for channel: $renegChannelId (mine: ${widget.channel.id})',
+        );
+
+        if (newSdp.isEmpty) break;
+
+        // Chỉ xử lý nếu đúng channel của mình
+        if (renegChannelId.isNotEmpty && renegChannelId != widget.channel.id) {
+          print('[CHANNEL WS] Ignoring renegotiate for different channel');
+          break;
         }
+
+        // FIX: kiểm tra SDP có chứa peerID của mình không
+        // Server gửi renegotiate offer chứa track của peer mới
+        // Offer dành cho PTT peer (username) sẽ KHÔNG chứa "_broadcast" trong SSRC cname
+        // Offer dành cho broadcast peer sẽ chứa "_broadcast" trong SSRC cname
+        // Tuy nhiên cả 2 offer đều được gửi qua WS tới user
+        // Channel screen chỉ cần xử lý offer có m-line mới cho PTT peer
+
+        // Kiểm tra SDP: nếu offer chứa track của chính mình (echo) thì bỏ qua
+        // Nếu offer là cho broadcast peer (_broadcast suffix) thì bỏ qua
+        // room_screen sẽ tự handle broadcast renegotiate qua _broadcastWs
+        final isBroadcastOffer = newSdp.contains('${_myPeerID}_broadcast');
+        if (isBroadcastOffer) {
+          print('[CHANNEL WS] Skipping broadcast renegotiate offer');
+          break;
+        }
+
+        print('[CHANNEL WS] Handling PTT renegotiate');
+        _sfuService.handleRenegotiate(newSdp);
         break;
     }
   }
@@ -423,7 +468,6 @@ class _ChannelScreenState extends State<ChannelScreen> {
                       ],
                     ),
                   ),
-                  // Mic status
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -670,7 +714,6 @@ class _ChannelScreenState extends State<ChannelScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Talking indicator
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     padding: const EdgeInsets.symmetric(
@@ -708,7 +751,6 @@ class _ChannelScreenState extends State<ChannelScreen> {
 
                   const SizedBox(height: 32),
 
-                  // PTT Button
                   GestureDetector(
                     onTapDown: (_) => _startTalk(),
                     onTapUp: (_) => _stopTalk(),
@@ -763,7 +805,6 @@ class _ChannelScreenState extends State<ChannelScreen> {
 
                   const SizedBox(height: 32),
 
-                  // Stats row
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 40),
                     child: Row(
