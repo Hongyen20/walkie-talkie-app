@@ -133,20 +133,18 @@ func (r *SFURoom) CreatePeer(peerID string) (*Peer, error) {
 		return nil, err
 	}
 
-	// Add peer vào room
+	// Snapshot existing peers TRƯỚC khi add peer mới vào room
+	// Tránh race condition khi 2 peer join cùng lúc
 	r.mutex.Lock()
-	r.Peers[peerID] = peer
-	r.mutex.Unlock()
-
-	// Snapshot existing peers
-	r.mutex.RLock()
 	existingPeers := make([]*Peer, 0)
 	for id, ep := range r.Peers {
 		if id != peerID {
 			existingPeers = append(existingPeers, ep)
 		}
 	}
-	r.mutex.RUnlock()
+	// Add peer vào room SAU KHI snapshot xong
+	r.Peers[peerID] = peer
+	r.mutex.Unlock()
 
 	// Add track của existing peers vào PC mới — m-line 1, 2, 3...
 	// Thứ tự này nhất quán vì peer mới luôn tạo PC từ đầu
