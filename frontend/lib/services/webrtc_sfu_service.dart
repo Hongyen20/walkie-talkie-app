@@ -16,7 +16,7 @@ class WebRTCSFUService {
   web.HTMLAudioElement? _audioElement;
   Function(String)? onStatusChange;
 
-  // Queue để serialize renegotiate — tránh race condition
+  // Queue để serialize renegotiate
   final _renegQueue = <String>[];
   bool _renegBusy = false;
 
@@ -50,6 +50,12 @@ class WebRTCSFUService {
     _peerId = peerId;
     _renegQueue.clear();
     _renegBusy = false;
+
+    // Đóng PC cũ nếu có
+    if (_pc != null) {
+      _pc!.close();
+      _pc = null;
+    }
 
     try {
       final config = web.RTCConfiguration(
@@ -173,7 +179,6 @@ class WebRTCSFUService {
     print('[SFU] Disconnected (peerId: ${_peerId ?? "default"})');
   }
 
-  // Queue renegotiate offers — xử lý tuần tự, không overlap
   void handleRenegotiate(String offerSdp) {
     _renegQueue.add(offerSdp);
     _processRenegQueue();
@@ -184,10 +189,9 @@ class WebRTCSFUService {
     _renegBusy = true;
 
     while (_renegQueue.isNotEmpty) {
-      // Nếu có nhiều offer pending, bỏ qua các offer cũ — chỉ xử lý offer mới nhất
+      // Chỉ xử lý offer mới nhất, bỏ qua cũ
       final offerSdp = _renegQueue.last;
       _renegQueue.clear();
-
       await _doRenegotiate(offerSdp);
     }
 
@@ -197,7 +201,6 @@ class WebRTCSFUService {
   Future<void> _doRenegotiate(String offerSdp) async {
     if (_pc == null || _token == null) return;
 
-    // FIX: kiểm tra trạng thái PC trước khi xử lý
     final signalingState = _pc!.signalingState ?? '';
     if (signalingState != 'stable' && signalingState != 'have-remote-offer') {
       print(

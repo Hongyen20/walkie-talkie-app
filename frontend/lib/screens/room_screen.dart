@@ -82,11 +82,12 @@ class _RoomScreenState extends State<RoomScreen> {
       return;
     }
 
-    // Auto-reconnect khi broadcast peer bị ICE drop
+    // Auto-reconnect khi broadcast peer bị ICE failed
+    // Chỉ reconnect khi 'failed' — 'disconnected' có thể tự phục hồi
     firstSfu.onStatusChange = (state) async {
-      if ((state == 'failed' || state == 'disconnected') && mounted) {
-        print('[BROADCAST] Connection $state — reconnecting...');
-        await Future.delayed(const Duration(seconds: 2));
+      if (state == 'failed' && mounted) {
+        print('[BROADCAST] Connection failed — reconnecting...');
+        await Future.delayed(const Duration(seconds: 3));
         if (!mounted) return;
         await firstSfu.connect(
           widget.user.token,
@@ -141,7 +142,7 @@ class _RoomScreenState extends State<RoomScreen> {
       }
     };
 
-    // Thêm ?broadcast=1 để server biết đây là broadcast-only WS
+    // FIX: thêm ?broadcast=1 để server biết đây là broadcast-only WS
     // → không add vào online list, không gửi user-joined/left
     _broadcastWs!.connectBroadcast(
       widget.user.token,
