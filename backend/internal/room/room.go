@@ -174,17 +174,41 @@ func (m *RoomManager) CleanIfEmpty(roomID string) {
 func (m *RoomManager) SendToUser(username string, msg []byte) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	log.Printf("[WS] SendToUser %s — rooms count: %d\n", username, len(m.rooms))
+
+	log.Printf("[WS] SendToUser target=%s", username)
+
 	for roomID, r := range m.rooms {
+
 		r.mutex.Lock()
-		log.Printf("[WS] Checking room %s — clients: %d\n", roomID, len(r.Clients))
+
 		for _, client := range r.Clients {
-			log.Printf("[WS] Client: %s\n", client.ID)
+
+			log.Printf(
+				"[WS] room=%s client.ID=%s target=%s",
+				roomID,
+				client.ID,
+				username,
+			)
+
 			if client.ID == username {
-				log.Printf("[WS] Found and sending to %s\n", username)
-				client.Conn.WriteMessage(websocket.TextMessage, msg)
+
+				log.Printf(
+					"[WS] MATCH FOUND -> %s",
+					username,
+				)
+
+				err := client.Conn.WriteMessage(
+					websocket.TextMessage,
+					msg,
+				)
+
+				log.Printf(
+					"[WS] Write result: %v",
+					err,
+				)
 			}
 		}
+
 		r.mutex.Unlock()
 	}
 }

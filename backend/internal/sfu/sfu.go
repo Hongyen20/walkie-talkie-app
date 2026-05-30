@@ -264,28 +264,23 @@ func (r *SFURoom) RemovePeer(peerID string) {
 }
 
 func (r *SFURoom) forwardRTP(senderID string, packet *rtp.Packet) {
+
 	r.mutex.RLock()
-	sender, ok := r.Peers[senderID]
-	r.mutex.RUnlock()
+	defer r.mutex.RUnlock()
 
-	if !ok {
-		log.Printf("[SFU] Sender not found: %s", senderID)
-		return
-	}
+	for id, peer := range r.Peers {
 
-	log.Printf(
-		"[SFU] RTP packet from %s seq=%d ts=%d",
-		senderID,
-		packet.SequenceNumber,
-		packet.Timestamp,
-	)
+		if id == senderID {
+			continue
+		}
 
-	if err := sender.AudioTrack.WriteRTP(packet); err != nil {
 		log.Printf(
-			"[SFU] Forward error writing to sender track %s: %v",
+			"[SFU] Forward RTP %s -> %s",
 			senderID,
-			err,
+			id,
 		)
+
+		_ = peer.AudioTrack.WriteRTP(packet)
 	}
 }
 func (r *SFURoom) HandleOffer(peerID string, sdp string) (string, error) {
