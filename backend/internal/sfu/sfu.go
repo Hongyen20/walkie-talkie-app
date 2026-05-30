@@ -142,12 +142,10 @@ func (r *SFURoom) CreatePeer(peerID string) (*Peer, error) {
 			existingPeers = append(existingPeers, ep)
 		}
 	}
-	// Add peer vào room SAU KHI snapshot xong
 	r.Peers[peerID] = peer
 	r.mutex.Unlock()
 
-	// Add track của existing peers vào PC mới — m-line 1, 2, 3...
-	// Thứ tự này nhất quán vì peer mới luôn tạo PC từ đầu
+	// Add track của existing peers vào PC mới
 	for _, ep := range existingPeers {
 		if _, err := pc.AddTransceiverFromTrack(
 			ep.AudioTrack,
@@ -160,8 +158,6 @@ func (r *SFURoom) CreatePeer(peerID string) (*Peer, error) {
 	}
 
 	// Add track của peer mới vào existing peers và renegotiate
-	// Existing peers KHÔNG tạo lại PC — chỉ append m-line mới
-	// Điều này OK vì existing peers chưa bao giờ nhận offer có m-line này
 	for _, ep := range existingPeers {
 		epID := ep.ID
 		if _, err := ep.PeerConnection.AddTransceiverFromTrack(
@@ -174,8 +170,17 @@ func (r *SFURoom) CreatePeer(peerID string) (*Peer, error) {
 		log.Printf("[SFU] Added track of %s to %s — renegotiating\n", peerID, epID)
 
 		go func(ep *Peer, epID string) {
+			// renegMu serialize tất cả renegotiate cho peer này
+			// tránh race condition khi 2 peer join gần cùng lúc
 			ep.renegMu.Lock()
 			defer ep.renegMu.Unlock()
+
+			// Kiểm tra signaling state — phải là stable mới tạo offer được
+			state := ep.PeerConnection.SignalingState()
+			if state != webrtc.SignalingStateStable {
+				log.Printf("[SFU] Skip renegotiate for %s — not stable: %s\n", epID, state)
+				return
+			}
 
 			offer, err := ep.PeerConnection.CreateOffer(nil)
 			if err != nil {
