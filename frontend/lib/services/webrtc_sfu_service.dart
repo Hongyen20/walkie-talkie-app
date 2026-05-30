@@ -89,60 +89,6 @@ class WebRTCSFUService {
         });
       }
 
-      _pc!.ontrack = ((web.RTCTrackEvent event) async {
-        final track = event.track;
-        final streams = event.streams.toDart;
-
-        print(
-          '[SFU] Track info: '
-          'kind=${track.kind} '
-          'enabled=${track.enabled} '
-          'muted=${track.muted}',
-        );
-
-        print('[SFU] Stream count=${streams.length}');
-
-        if (streams.isEmpty) {
-          print('[SFU] No stream received');
-          return;
-        }
-
-        final stream = streams[0];
-
-        print(
-          '[SFU] Audio tracks count='
-          '${stream.getAudioTracks().toDart.length}',
-        );
-
-        if (_audioElement == null) {
-          _audioElement = web.HTMLAudioElement();
-
-          _audioElement!.autoplay = true;
-          _audioElement!.muted = false;
-          _audioElement!.volume = 1.0;
-
-          web.document.body!.append(_audioElement!);
-
-          print(
-            '[SFU] Created audio element '
-            '(peerId: ${_peerId ?? "default"})',
-          );
-        }
-
-        _audioElement!.srcObject = stream;
-
-        print(
-          '[SFU] Audio stream updated '
-          'paused=${_audioElement!.paused}',
-        );
-
-        try {
-          await _audioElement!.play().toDart;
-          print('[SFU] play() success');
-        } catch (e) {
-          print('[SFU] play() failed: $e');
-        }
-      }).toJS;
       _pc!.ontrack = ((web.RTCTrackEvent event) {
         final track = event.track;
         final streams = event.streams.toDart;
