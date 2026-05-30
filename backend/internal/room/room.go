@@ -172,6 +172,7 @@ func (m *RoomManager) CleanIfEmpty(roomID string) {
 }
 
 func (m *RoomManager) SendToUser(username string, msg []byte) {
+	found := false
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -191,7 +192,7 @@ func (m *RoomManager) SendToUser(username string, msg []byte) {
 			)
 
 			if client.ID == username {
-
+				found = true
 				log.Printf(
 					"[WS] MATCH FOUND -> %s",
 					username,
@@ -206,6 +207,12 @@ func (m *RoomManager) SendToUser(username string, msg []byte) {
 					"[WS] Write result: %v",
 					err,
 				)
+				if !found {
+					log.Printf(
+						"[WS] USER NOT FOUND: %s",
+						username,
+					)
+				}
 			}
 		}
 
