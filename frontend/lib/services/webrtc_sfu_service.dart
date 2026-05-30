@@ -5,20 +5,6 @@ import 'package:http/http.dart' as http;
 import 'package:web/web.dart' as web;
 import '../config/constants.dart';
 
-// JS interop cho RTCOfferOptions — package web không expose offerToReceiveAudio
-@JS()
-@anonymous
-extension type RTCOfferOptionsExt._(JSObject _) implements JSObject {
-  external factory RTCOfferOptionsExt({JSBoolean offerToReceiveAudio});
-}
-
-// JS interop cho RTCRtpTransceiverInit — package web thiếu direction string
-@JS()
-@anonymous
-extension type RTCRtpTransceiverInitExt._(JSObject _) implements JSObject {
-  external factory RTCRtpTransceiverInitExt({JSString direction});
-}
-
 class WebRTCSFUService {
   web.RTCPeerConnection? _pc;
   web.MediaStream? _localStream;
@@ -124,31 +110,49 @@ class WebRTCSFUService {
       _setupOnTrack();
       _setupOnConnectionState();
 
-      // Add local mic track
+      // Add local mic track (sendrecv — 1 m-line cho send + receive)
       if (_localStream != null) {
         _localStream!.getTracks().toDart.forEach((track) {
           _pc!.addTrack(track, _localStream!);
         });
       }
 
-      // FIX: Thêm recvonly transceivers để offer có sẵn m-lines trống.
-      // Khi peer join vào room đã có người, server nhét track existing peers
-      // vào các m-lines này trong answer → ontrack fire ngay sau
-      // setRemoteDescription(answer), không cần renegotiate thêm.
-      // Dùng JS interop vì web package không expose RTCRtpTransceiverInit.direction
-      for (int i = 0; i < 4; i++) {
-        _pc!.addTransceiver(
-          'audio'.toJS,
-          RTCRtpTransceiverInitExt(direction: 'recvonly'.toJS),
-        );
+      // FIX: Tạo offer SDP có sẵn recvonly m-lines để server có chỗ
+      // nhét track của existing peers vào.
+      //
+      // Cách làm: tạo 4 silent MediaStreamTrack bằng AudioContext.createMediaStreamDestination,
+      // add vào PC với stream riêng biệt → browser tạo m-line sendrecv/recvonly
+      // tương ứng trong offer → server map existing peer tracks vào đó →
+      // ontrack fire ngay sau setRemoteDescription(answer).
+      //
+      // Sau khi connect, các track này bị disable → không tốn bandwidth.
+      //
+      // Đây là cách duy nhất không cần addTransceiver (type conflict) và
+      // không cần js_interop_unsafe.
+      final silentStreams = <web.MediaStream>[];
+      try {
+        final audioCtx = web.AudioContext();
+        for (int i = 0; i < 4; i++) {
+          final dest = audioCtx.createMediaStreamDestination();
+          final silentStream = dest.stream;
+          final tracks = silentStream.getAudioTracks().toDart;
+          if (tracks.isNotEmpty) {
+            _pc!.addTrack(tracks[0], silentStream);
+            silentStreams.add(silentStream);
+          }
+        }
+        // Đóng AudioContext ngay — không cần nữa sau khi đã add track
+        audioCtx.close();
+      } catch (e) {
+        print('[SFU] Warning: could not create silent tracks: $e');
+        // Không critical — renegotiate vẫn hoạt động như fallback
       }
 
-      // Tạo offer — offerToReceiveAudio đã được đảm bảo bởi các transceiver trên
       final offer = await _pc!.createOffer().toDart;
       final offerSdp = offer?.sdp ?? '';
 
       print(
-        '[SFU] Offer SDP m-lines: ${_countMLines(offerSdp)} '
+        '[SFU] Offer m-lines=${_countMLines(offerSdp)} '
         '(peerId: ${peerId ?? "default"})',
       );
 
@@ -185,6 +189,7 @@ class WebRTCSFUService {
           )
           .toDart;
 
+      // ontrack sẽ fire tại đây nếu answer có track của existing peers
       print('[SFU] Connected to SFU (peerId: ${peerId ?? "default"})');
       return true;
     } catch (e) {
@@ -206,8 +211,15 @@ class WebRTCSFUService {
         'streams=${streams.length}',
       );
 
+      // Bỏ qua track từ silent streams của chính mình
+      if (track.id.startsWith('audio_') == false &&
+          _localStream != null &&
+          _localStream!.getTrackById(track.id) != null) {
+        print('[SFU] ontrack: skip local track ${track.id}');
+        return;
+      }
+
       if (streams.isEmpty) {
-        // Fallback: một số browser không attach stream tự động
         print('[SFU] ontrack: no streams — wrapping track manually');
         final stream = web.MediaStream();
         stream.addTrack(track);
@@ -215,7 +227,14 @@ class WebRTCSFUService {
         return;
       }
 
-      _attachAudio(streams[0]);
+      // Bỏ qua nếu stream chứa track local của mình
+      final stream = streams[0];
+      if (_localStream != null && stream.id == _localStream!.id) {
+        print('[SFU] ontrack: skip local stream');
+        return;
+      }
+
+      _attachAudio(stream);
     }).toJS;
   }
 
@@ -431,7 +450,6 @@ class WebRTCSFUService {
         });
   }
 
-  // Đếm số m-lines trong SDP để debug
   int _countMLines(String sdp) {
     return RegExp(r'^m=', multiLine: true).allMatches(sdp).length;
   }
