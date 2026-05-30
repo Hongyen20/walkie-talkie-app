@@ -52,33 +52,32 @@ class WebSocketService {
         },
         onDone: () {
           print('[WS] Disconnected');
-          if (!_disposed) {
-            // Auto-reconnect sau 2 giây
-            _reconnectTimer?.cancel();
-            _reconnectTimer = Timer(const Duration(seconds: 2), () {
-              if (!_disposed) {
-                print('[WS] Reconnecting...');
-                _connect();
-              }
-            });
-          }
+          _scheduleReconnect();
         },
         onError: (e) {
           print('[WS] Error: $e');
-          if (!_disposed) {
-            _reconnectTimer?.cancel();
-            _reconnectTimer = Timer(const Duration(seconds: 2), () {
-              if (!_disposed) {
-                print('[WS] Reconnecting after error...');
-                _connect();
-              }
-            });
-          }
+          _scheduleReconnect();
         },
       );
     } catch (e) {
       print('[WS] Connect error: $e');
     }
+  }
+
+  void _scheduleReconnect() {
+    if (_disposed) return;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(const Duration(seconds: 2), () {
+      if (_disposed) return;
+      print('[WS] Reconnecting...');
+      _connect();
+      // Gửi lại join sau khi reconnect để server cập nhật online list
+      if (!_isBroadcast) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (!_disposed) send({'type': 'join'});
+        });
+      }
+    });
   }
 
   void send(Map<String, dynamic> msg) {
