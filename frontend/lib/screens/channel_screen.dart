@@ -302,6 +302,9 @@ class _ChannelScreenState extends State<ChannelScreen> {
       _talkingUser = widget.user.username;
     });
     _sfuService.startTalking();
+    final ts = DateTime.now().millisecondsSinceEpoch;
+
+    print('SEND TS = $ts');
     _wsService.send({
       'type': 'ptt-start',
       'timestamp': DateTime.now().millisecondsSinceEpoch,
