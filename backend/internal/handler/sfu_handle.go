@@ -41,6 +41,27 @@ func resolvePeerID(r *http.Request, username string) string {
 	return username
 }
 
+// buildRenegCb tạo callback renegotiate cho một channel cụ thể.
+// Callback này được tạo TRƯỚC khi HandleOffer chạy và truyền thẳng
+// vào CreatePeer → goroutine capture ngay → không còn race condition.
+func (h *SFUHandler) buildRenegCb(channelID string) func(string, string) {
+	return func(peerID string, sdp string) {
+		if h.notifyFunc == nil {
+			return
+		}
+		wsTarget := strings.TrimSuffix(peerID, "_broadcast")
+		isBroadcast := strings.HasSuffix(peerID, "_broadcast")
+		log.Printf("[SFU] Renegotiate -> wsTarget=%s peerID=%s channel=%s\n",
+			wsTarget, peerID, channelID)
+		h.notifyFunc(wsTarget, map[string]interface{}{
+			"type":         "sfu-renegotiate",
+			"message":      sdp,
+			"channel_id":   channelID,
+			"is_broadcast": isBroadcast,
+		})
+	}
+}
+
 // POST /sfu/offer
 func (h *SFUHandler) HandleOffer(w http.ResponseWriter, r *http.Request) {
 	username, ok := getUsernameFromContext(r)
@@ -70,23 +91,15 @@ func (h *SFUHandler) HandleOffer(w http.ResponseWriter, r *http.Request) {
 	roomKey := roomID + "_" + channelID
 	sfuRoom := h.manager.GetOrCreateRoom(roomKey)
 
-	// ── FIX: Set OnRenegotiate TRƯỚC khi HandleOffer/CreatePeer ──
-	cID := channelID
-	sfuRoom.OnRenegotiate = func(pid string, sdp string) {
-		if h.notifyFunc == nil {
-			return
-		}
-		wsTarget := strings.TrimSuffix(pid, "_broadcast")
-		log.Printf("[SFU] Renegotiate -> WS target=%s (peerID=%s channel=%s)\n", wsTarget, pid, cID)
-		h.notifyFunc(wsTarget, map[string]interface{}{
-			"type":         "sfu-renegotiate",
-			"message":      sdp,
-			"channel_id":   cID,
-			"is_broadcast": strings.HasSuffix(pid, "_broadcast"),
-		})
-	}
+	// FIX: Tạo callback TRƯỚC khi gọi HandleOffer.
+	// HandleOffer → CreatePeer → goroutine renegotiate capture cb ngay tại đây.
+	// Không còn window thời gian giữa "set OnRenegotiate" và "goroutine chạy".
+	renegCb := h.buildRenegCb(channelID)
 
-	answerSDP, err := sfuRoom.HandleOffer(peerID, body.SDP)
+	// Cũng set r.OnRenegotiate để tương thích với các code path khác nếu có.
+	sfuRoom.OnRenegotiate = renegCb
+
+	answerSDP, err := sfuRoom.HandleOffer(peerID, body.SDP, renegCb)
 	if err != nil {
 		log.Printf("[SFU] HandleOffer error for %s: %v\n", peerID, err)
 		WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -177,19 +190,15 @@ func (h *SFUHandler) HandleRenegotiate(w http.ResponseWriter, r *http.Request) {
 
 	peer, exists := sfuRoom.GetPeer(peerID)
 	if !exists {
-		// Peer không tồn tại — có thể đã reconnect và tạo peer mới
-		// Trả 200 để client không retry liên tục
 		log.Printf("[SFU] Renegotiate: peer %s not found (may have reconnected), ignoring\n", peerID)
 		WriteJSON(w, http.StatusOK, map[string]string{"message": "peer gone, ignored"})
 		return
 	}
 
-	// FIX: kiểm tra signaling state trước khi SetRemoteDescription
 	state := peer.PeerConnection.SignalingState()
 	log.Printf("[SFU] Renegotiate for %s — signaling state: %s\n", peerID, state)
 
 	if state != webrtc.SignalingStateHaveLocalOffer {
-		// Không ở trạng thái đúng — bỏ qua thay vì trả 500
 		log.Printf("[SFU] Renegotiate for %s skipped — wrong state: %s\n", peerID, state)
 		WriteJSON(w, http.StatusOK, map[string]string{"message": "wrong state, ignored"})
 		return

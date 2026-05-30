@@ -19,7 +19,9 @@ type Peer struct {
 type SFURoom struct {
 	ID    string
 	Peers map[string]*Peer
-	// SenderTracks: audio track của từng peer, dùng để forward cho peer khác nghe
+	// SenderTracks: audio track của từng peer.
+	// Server nhận RTP từ peer, write vào track này.
+	// Tất cả peer khác đã add track này vào PC của họ → tự nghe được.
 	SenderTracks  map[string]*webrtc.TrackLocalStaticRTP
 	mutex         sync.RWMutex
 	OnRenegotiate func(peerID string, sdp string)
@@ -105,21 +107,31 @@ func iceConfig() webrtc.Configuration {
 	}
 }
 
-func (r *SFURoom) CreatePeer(peerID string) (*Peer, error) {
+// createSenderTrack tạo TrackLocalStaticRTP dùng để forward audio của peerID cho các peer khác.
+func createSenderTrack(peerID string) (*webrtc.TrackLocalStaticRTP, error) {
+	streamID := fmt.Sprintf("stream_%s_%d", peerID, time.Now().UnixNano())
+	return webrtc.NewTrackLocalStaticRTP(
+		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus},
+		"audio_"+peerID,
+		streamID,
+	)
+}
+
+// CreatePeer tạo peer mới, add existing tracks vào PC của peer mới,
+// và renegotiate với existing peers để push track mới xuống họ.
+//
+// FIX race condition: callback được truyền thẳng vào hàm và capture
+// vào closure ngay lúc goroutine được tạo, thay vì đọc r.OnRenegotiate
+// sau một khoảng delay. Điều này đảm bảo goroutine luôn có callback
+// dù HandleOffer và set OnRenegotiate xảy ra gần nhau.
+func (r *SFURoom) CreatePeer(peerID string, renegCb func(string, string)) (*Peer, error) {
 	api := newWebRTCAPI()
 	pc, err := api.NewPeerConnection(iceConfig())
 	if err != nil {
 		return nil, err
 	}
 
-	// Tạo sender track cho peer này — server sẽ write audio nhận từ peer vào đây
-	// rồi forward cho tất cả peers khác nghe
-	streamID := fmt.Sprintf("stream_%s_%d", peerID, time.Now().UnixNano())
-	senderTrack, err := webrtc.NewTrackLocalStaticRTP(
-		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus},
-		"audio_"+peerID,
-		streamID,
-	)
+	senderTrack, err := createSenderTrack(peerID)
 	if err != nil {
 		pc.Close()
 		return nil, err
@@ -130,7 +142,7 @@ func (r *SFURoom) CreatePeer(peerID string) (*Peer, error) {
 		PeerConnection: pc,
 	}
 
-	// Nhận audio từ client peer này
+	// recvonly transceiver — nhận audio từ client này
 	if _, err := pc.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
 		Direction: webrtc.RTPTransceiverDirectionRecvonly,
 	}); err != nil {
@@ -138,7 +150,8 @@ func (r *SFURoom) CreatePeer(peerID string) (*Peer, error) {
 		return nil, err
 	}
 
-	// Snapshot existing peers và tracks TRƯỚC khi add peer mới
+	// Snapshot existing peers + tracks TRƯỚC khi add peer mới vào room.
+	// Tránh race condition khi 2 peer join gần nhau.
 	r.mutex.Lock()
 	existingPeers := make([]*Peer, 0, len(r.Peers))
 	existingTracks := make([]*webrtc.TrackLocalStaticRTP, 0, len(r.SenderTracks))
@@ -156,36 +169,39 @@ func (r *SFURoom) CreatePeer(peerID string) (*Peer, error) {
 	r.SenderTracks[peerID] = senderTrack
 	r.mutex.Unlock()
 
-	// Add tất cả existing sender tracks vào PC của peer mới
-	// → peer mới sẽ nghe được tất cả người đang trong room
+	// Add tất cả existing sender tracks vào PC của peer mới.
+	// Peer mới sẽ nghe được tất cả người đang trong room ngay sau khi connect.
 	for _, track := range existingTracks {
 		if _, err := pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{
 			Direction: webrtc.RTPTransceiverDirectionSendonly,
 		}); err != nil {
-			log.Printf("[SFU] Error adding existing track to new peer %s: %v\n", peerID, err)
+			log.Printf("[SFU] Error adding existing track %s to new peer %s: %v\n",
+				track.ID(), peerID, err)
 		} else {
 			log.Printf("[SFU] Added existing track %s to new peer %s\n", track.ID(), peerID)
 		}
 	}
 
-	// Add sender track của peer mới vào PC của tất cả existing peers
-	// → existing peers sẽ nghe được peer mới, cần renegotiate
+	// Add sender track của peer mới vào PC của từng existing peer.
+	// Existing peers cần renegotiate để nhận track mới này.
 	for _, ep := range existingPeers {
 		epCopy := ep
 		if _, err := epCopy.PeerConnection.AddTransceiverFromTrack(
 			senderTrack,
 			webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly},
 		); err != nil {
-			log.Printf("[SFU] Error adding new peer track to existing peer %s: %v\n", epCopy.ID, err)
+			log.Printf("[SFU] Error adding new peer track to %s: %v\n", epCopy.ID, err)
 			continue
 		}
-		log.Printf("[SFU] Queued renegotiate for existing peer %s\n", epCopy.ID)
+		log.Printf("[SFU] Track of %s added to %s — queuing renegotiate\n", peerID, epCopy.ID)
 
-		go func(ep *Peer) {
+		// FIX: renegCb được capture tại đây, không đọc r.OnRenegotiate sau delay.
+		// Kể cả khi goroutine chạy muộn (vì chờ signaling stable), callback vẫn valid.
+		go func(ep *Peer, cb func(string, string)) {
 			ep.renegMu.Lock()
 			defer ep.renegMu.Unlock()
 
-			// Chờ signaling state stable
+			// Chờ signaling state stable (tối đa 3 giây)
 			for i := 0; i < 30; i++ {
 				if ep.PeerConnection.SignalingState() == webrtc.SignalingStateStable {
 					break
@@ -193,35 +209,33 @@ func (r *SFURoom) CreatePeer(peerID string) (*Peer, error) {
 				time.Sleep(100 * time.Millisecond)
 			}
 			if ep.PeerConnection.SignalingState() != webrtc.SignalingStateStable {
-				log.Printf("[SFU] Renegotiate timeout for %s state=%s\n", ep.ID,
-					ep.PeerConnection.SignalingState())
+				log.Printf("[SFU] Renegotiate timeout for %s state=%s\n",
+					ep.ID, ep.PeerConnection.SignalingState())
 				return
 			}
 
 			offer, err := ep.PeerConnection.CreateOffer(nil)
 			if err != nil {
-				log.Printf("[SFU] Renegotiate offer error for %s: %v\n", ep.ID, err)
+				log.Printf("[SFU] Renegotiate CreateOffer error for %s: %v\n", ep.ID, err)
 				return
 			}
 			if err := ep.PeerConnection.SetLocalDescription(offer); err != nil {
-				log.Printf("[SFU] Renegotiate setLocal error for %s: %v\n", ep.ID, err)
+				log.Printf("[SFU] Renegotiate SetLocalDescription error for %s: %v\n", ep.ID, err)
 				return
 			}
 			<-webrtc.GatheringCompletePromise(ep.PeerConnection)
 
-			r.mutex.RLock()
-			cb := r.OnRenegotiate
-			r.mutex.RUnlock()
-
 			if cb != nil {
+				log.Printf("[SFU] Sending renegotiate offer to %s\n", ep.ID)
 				cb(ep.ID, ep.PeerConnection.LocalDescription().SDP)
 			} else {
-				log.Printf("[SFU] WARNING: OnRenegotiate nil for %s\n", ep.ID)
+				log.Printf("[SFU] WARNING: renegotiate callback nil for %s\n", ep.ID)
 			}
-		}(epCopy)
+		}(epCopy, renegCb)
 	}
 
-	// OnTrack: nhận audio từ peer, write vào senderTrack để forward cho người khác
+	// OnTrack: nhận RTP từ peer, write vào senderTrack.
+	// Tất cả peer khác đã add senderTrack này vào PC của họ → tự forward.
 	pc.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		log.Printf("[SFU] Got track from %s kind=%s\n", peerID, track.Kind())
 		if track.Kind() != webrtc.RTPCodecTypeAudio {
@@ -234,10 +248,7 @@ func (r *SFURoom) CreatePeer(peerID string) (*Peer, error) {
 					log.Printf("[SFU] Track ended for %s\n", peerID)
 					return
 				}
-				// Write vào senderTrack của peer này
-				// Tất cả peers khác đã add track này → tự nhận được audio
 				if err := senderTrack.WriteRTP(pkt); err != nil {
-					// Track closed — peer đã disconnect
 					return
 				}
 			}
@@ -256,7 +267,8 @@ func (r *SFURoom) CreatePeer(peerID string) (*Peer, error) {
 		}
 	})
 
-	log.Printf("[SFU] Peer %s joined room %s\n", peerID, r.ID)
+	log.Printf("[SFU] Peer %s joined room %s (%d existing peers)\n",
+		peerID, r.ID, len(existingPeers))
 	return peer, nil
 }
 
@@ -271,15 +283,19 @@ func (r *SFURoom) RemovePeer(peerID string) {
 	}
 }
 
-func (r *SFURoom) HandleOffer(peerID string, sdp string) (string, error) {
+// HandleOffer xử lý SDP offer từ client.
+// renegCb được truyền vào và capture vào goroutine ngay lập tức,
+// không phụ thuộc vào r.OnRenegotiate được set sau đó.
+func (r *SFURoom) HandleOffer(peerID string, sdp string, renegCb func(string, string)) (string, error) {
 	log.Printf("[SFU] HandleOffer START peer=%s\n", peerID)
 
+	// Xóa peer cũ nếu reconnect
 	if _, exists := r.GetPeer(peerID); exists {
 		log.Printf("[SFU] Removing old peer %s before reconnect\n", peerID)
 		r.RemovePeer(peerID)
 	}
 
-	peer, err := r.CreatePeer(peerID)
+	peer, err := r.CreatePeer(peerID, renegCb)
 	if err != nil {
 		return "", fmt.Errorf("CreatePeer: %w", err)
 	}
