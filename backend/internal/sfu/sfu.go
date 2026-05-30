@@ -264,22 +264,12 @@ func (r *SFURoom) RemovePeer(peerID string) {
 }
 
 func (r *SFURoom) forwardRTP(senderID string, packet *rtp.Packet) {
-
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
-
 	for id, peer := range r.Peers {
-
 		if id == senderID {
 			continue
 		}
-
-		log.Printf(
-			"[SFU] Forward RTP %s -> %s",
-			senderID,
-			id,
-		)
-
 		_ = peer.AudioTrack.WriteRTP(packet)
 	}
 }

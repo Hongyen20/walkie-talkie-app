@@ -109,6 +109,11 @@ class WebRTCSFUService {
       }
 
       _pc!.ontrack = ((web.RTCTrackEvent event) {
+        print(
+          '[SFU] ONTRACK '
+          'kind=${event.track.kind} '
+          'id=${event.track.id}',
+        );
         final streams = event.streams.toDart;
         final track = event.track;
 
@@ -121,7 +126,7 @@ class WebRTCSFUService {
         );
         if (streams.isEmpty) return;
         final stream = streams[0];
-
+        print('[SFU] stream audio tracks=${stream.getAudioTracks().length}');
         if (_audioElement == null) {
           _audioElement = web.HTMLAudioElement();
           _audioElement!.autoplay = true;
@@ -134,6 +139,10 @@ class WebRTCSFUService {
         }
 
         _audioElement!.srcObject = stream;
+        print(
+          '[SFU] Audio element muted=${_audioElement!.muted} '
+          'volume=${_audioElement!.volume}',
+        );
         print('[SFU] Audio stream updated (peerId: ${_peerId ?? "default"})');
 
         if (_audioUnlocked) {
