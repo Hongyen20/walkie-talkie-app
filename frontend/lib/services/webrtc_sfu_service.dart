@@ -201,10 +201,18 @@ class WebRTCSFUService {
   Future<void> _doRenegotiate(String offerSdp) async {
     if (_pc == null || _token == null) return;
 
-    final signalingState = _pc!.signalingState ?? '';
+    // Chờ tối đa 3 giây cho đến khi PC ở trạng thái stable hoặc have-remote-offer
+    for (int i = 0; i < 30; i++) {
+      final s = _pc?.signalingState ?? '';
+      if (s == 'stable' || s == 'have-remote-offer') break;
+      if (s == 'closed' || _pc == null) return;
+      print('[SFU] Waiting for stable state: $s (attempt $i)');
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    final signalingState = _pc?.signalingState ?? '';
     if (signalingState != 'stable' && signalingState != 'have-remote-offer') {
       print(
-        '[SFU] Skip renegotiate — wrong state: $signalingState (peerId: ${_peerId ?? "default"})',
+        '[SFU] Skip renegotiate — still wrong state: $signalingState (peerId: ${_peerId ?? "default"})',
       );
       return;
     }
