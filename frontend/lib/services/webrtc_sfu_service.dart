@@ -64,18 +64,18 @@ class WebRTCSFUService {
           web.RTCIceServer(urls: 'stun:openrelay.metered.ca:80'.toJS),
           web.RTCIceServer(
             urls: 'turn:openrelay.metered.ca:80'.toJS,
-            username: 'openrelayproject'.toJS,
-            credential: 'openrelayproject'.toJS,
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
           ),
           web.RTCIceServer(
             urls: 'turn:openrelay.metered.ca:443'.toJS,
-            username: 'openrelayproject'.toJS,
-            credential: 'openrelayproject'.toJS,
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
           ),
           web.RTCIceServer(
             urls: 'turn:openrelay.metered.ca:443?transport=tcp'.toJS,
-            username: 'openrelayproject'.toJS,
-            credential: 'openrelayproject'.toJS,
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
           ),
         ].toJS,
       );
