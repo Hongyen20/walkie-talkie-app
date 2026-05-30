@@ -265,57 +265,90 @@ func (r *SFURoom) RemovePeer(peerID string) {
 
 func (r *SFURoom) forwardRTP(senderID string, packet *rtp.Packet) {
 	r.mutex.RLock()
-	defer r.mutex.RUnlock()
+	sender, ok := r.Peers[senderID]
+	r.mutex.RUnlock()
 
-	for peerID, peer := range r.Peers {
+	if !ok {
+		log.Printf("[SFU] Sender not found: %s", senderID)
+		return
+	}
 
-		if peerID == senderID {
-			continue
-		}
+	log.Printf(
+		"[SFU] RTP packet from %s seq=%d ts=%d",
+		senderID,
+		packet.SequenceNumber,
+		packet.Timestamp,
+	)
 
-		if err := peer.AudioTrack.WriteRTP(packet); err != nil {
-
-			log.Printf(
-				"[SFU] Forward RTP %s -> %s error: %v",
-				senderID,
-				peerID,
-				err,
-			)
-		}
+	if err := sender.AudioTrack.WriteRTP(packet); err != nil {
+		log.Printf(
+			"[SFU] Forward error writing to sender track %s: %v",
+			senderID,
+			err,
+		)
 	}
 }
-
 func (r *SFURoom) HandleOffer(peerID string, sdp string) (string, error) {
+	log.Printf("[SFU] ===== HandleOffer START peer=%s =====\n", peerID)
 	if _, exists := r.getPeer(peerID); exists {
 		log.Printf("[SFU] Removing old peer %s before reconnect\n", peerID)
 		r.RemovePeer(peerID)
 	}
-
+	log.Printf("[SFU] STEP 1: CreatePeer\n")
 	peer, err := r.CreatePeer(peerID)
 	if err != nil {
+		log.Printf("[SFU] STEP 1 FAILED: %v\n", err)
 		return "", err
 	}
-
-	if err := peer.PeerConnection.SetRemoteDescription(webrtc.SessionDescription{
-		Type: webrtc.SDPTypeOffer,
-		SDP:  sdp,
-	}); err != nil {
+	log.Printf("[SFU] STEP 1 OK\n")
+	log.Printf("[SFU] STEP 2: SetRemoteDescription\n")
+	if err := peer.PeerConnection.SetRemoteDescription(
+		webrtc.SessionDescription{
+			Type: webrtc.SDPTypeOffer,
+			SDP:  sdp,
+		},
+	); err != nil {
+		log.Printf("[SFU] STEP 2 FAILED: %v\n", err)
 		return "", err
 	}
-
+	log.Printf("[SFU] STEP 2 OK\n")
+	log.Printf("[SFU] STEP 3: CreateAnswer\n")
 	answer, err := peer.PeerConnection.CreateAnswer(nil)
 	if err != nil {
+
+		log.Printf("[SFU] STEP 3 FAILED: %v\n", err)
 		return "", err
 	}
-
+	log.Printf("[SFU] STEP 3 OK\n")
+	log.Printf("[SFU] STEP 4: SetLocalDescription\n")
 	if err := peer.PeerConnection.SetLocalDescription(answer); err != nil {
+		log.Printf("[SFU] STEP 4 FAILED: %v\n", err)
 		return "", err
 	}
+	log.Printf("[SFU] STEP 4 OK\n")
+	log.Printf("[SFU] STEP 5: Waiting ICE Gathering\n")
+	select {
+	case <-webrtc.GatheringCompletePromise(peer.PeerConnection):
+		log.Printf("[SFU] STEP 5 OK: ICE Gathering Complete\n")
+	case <-time.After(5 * time.Second):
+		log.Printf("[SFU] STEP 5 TIMEOUT: ICE Gathering > 5s\n")
+	}
+	localDesc := peer.PeerConnection.LocalDescription()
+	if localDesc == nil {
 
-	<-webrtc.GatheringCompletePromise(peer.PeerConnection)
-	return peer.PeerConnection.LocalDescription().SDP, nil
+		log.Printf("[SFU] STEP 6 FAILED: LocalDescription nil\n")
+		return "", fmt.Errorf("local description nil")
+	}
+	log.Printf(
+		"[SFU] STEP 6 OK: SDP length=%d\n",
+		len(localDesc.SDP),
+	)
+	log.Printf(
+		"[SFU] ===== HandleOffer SUCCESS peer=%s =====\n",
+		peerID,
+	)
+	return localDesc.SDP, nil
 }
-
 func (r *SFURoom) AddICECandidate(peerID string, candidate webrtc.ICECandidateInit) error {
 	peer, exists := r.getPeer(peerID)
 	if !exists {
@@ -369,12 +402,17 @@ func (r *SFURoom) renegotiateAll() {
 				return
 			}
 
-			<-webrtc.GatheringCompletePromise(
-				p.PeerConnection,
-			)
+			select {
+			case <-webrtc.GatheringCompletePromise(
+				peer.PeerConnection,
+			):
+				log.Println("[SFU] ICE gather complete")
+
+			case <-time.After(5 * time.Second):
+				log.Println("[SFU] ICE gather timeout")
+			}
 
 			if r.OnRenegotiate != nil {
-
 				r.OnRenegotiate(
 					p.ID,
 					p.PeerConnection.

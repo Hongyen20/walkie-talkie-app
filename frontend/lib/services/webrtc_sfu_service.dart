@@ -4,6 +4,8 @@ import 'dart:js_interop';
 import 'package:http/http.dart' as http;
 import 'package:web/web.dart' as web;
 import '../config/constants.dart';
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 
 class WebRTCSFUService {
   web.RTCPeerConnection? _pc;
@@ -87,24 +89,114 @@ class WebRTCSFUService {
         });
       }
 
-      _pc!.ontrack = (web.RTCTrackEvent event) {
-        print('[SFU] Got remote track! (peerId: ${_peerId ?? "default"})');
+      _pc!.ontrack = ((web.RTCTrackEvent event) async {
+        final track = event.track;
         final streams = event.streams.toDart;
-        if (streams.isNotEmpty) {
-          if (_audioElement == null) {
-            _audioElement = web.HTMLAudioElement();
-            _audioElement!.autoplay = true;
-            web.document.body!.append(_audioElement!);
-            print(
-              '[SFU] Created audio element for peerId: ${_peerId ?? "default"}',
-            );
-          }
-          _audioElement!.srcObject = streams[0];
+
+        print(
+          '[SFU] Track info: '
+          'kind=${track.kind} '
+          'enabled=${track.enabled} '
+          'muted=${track.muted}',
+        );
+
+        print('[SFU] Stream count=${streams.length}');
+
+        if (streams.isEmpty) {
+          print('[SFU] No stream received');
+          return;
+        }
+
+        final stream = streams[0];
+
+        print(
+          '[SFU] Audio tracks count='
+          '${stream.getAudioTracks().toDart.length}',
+        );
+
+        if (_audioElement == null) {
+          _audioElement = web.HTMLAudioElement();
+
+          _audioElement!.autoplay = true;
+          _audioElement!.muted = false;
+          _audioElement!.volume = 1.0;
+
+          web.document.body!.append(_audioElement!);
+
           print(
-            '[SFU] Audio stream updated for peerId: ${_peerId ?? "default"}',
+            '[SFU] Created audio element '
+            '(peerId: ${_peerId ?? "default"})',
           );
         }
-      }.toJS;
+
+        _audioElement!.srcObject = stream;
+
+        print(
+          '[SFU] Audio stream updated '
+          'paused=${_audioElement!.paused}',
+        );
+
+        try {
+          await _audioElement!.play().toDart;
+          print('[SFU] play() success');
+        } catch (e) {
+          print('[SFU] play() failed: $e');
+        }
+      }).toJS;
+      _pc!.ontrack = ((web.RTCTrackEvent event) async {
+        final track = event.track;
+        final streams = event.streams.toDart;
+
+        print(
+          '[SFU] Track info: '
+          'kind=${track.kind} '
+          'enabled=${track.enabled} '
+          'muted=${track.muted}',
+        );
+
+        print('[SFU] Stream count=${streams.length}');
+
+        if (streams.isEmpty) {
+          print('[SFU] No stream received');
+          return;
+        }
+
+        final stream = streams[0];
+
+        print(
+          '[SFU] Audio tracks count='
+          '${stream.getAudioTracks().toDart.length}',
+        );
+
+        if (_audioElement == null) {
+          _audioElement = web.HTMLAudioElement();
+
+          _audioElement!.autoplay = true;
+          _audioElement!.muted = false;
+          _audioElement!.volume = 1.0;
+
+          web.document.body!.append(_audioElement!);
+
+          print(
+            '[SFU] Created audio element '
+            '(peerId: ${_peerId ?? "default"})',
+          );
+        }
+
+        _audioElement!.srcObject = stream;
+
+        print(
+          '[SFU] Audio stream updated '
+          'paused=${_audioElement!.paused}',
+        );
+
+        try {
+          await _audioElement!.play().toDart;
+          print('[SFU] play() success');
+        } catch (e) {
+          print('[SFU] play() failed: $e');
+        }
+      }).toJS;
 
       _pc!.onconnectionstatechange = (web.Event event) {
         final state = _pc?.connectionState ?? '';
