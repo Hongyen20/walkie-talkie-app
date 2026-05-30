@@ -29,10 +29,11 @@ func GetManager() *room.RoomManager {
 }
 
 type Message struct {
-	Type    string          `json:"type"`
-	From    string          `json:"from"`
-	To      string          `json:"to"`
-	Message json.RawMessage `json:"message"`
+	Type      string          `json:"type"`
+	From      string          `json:"from"`
+	To        string          `json:"to"`
+	Timestamp int64           `json:"timestamp,omitempty"`
+	Message   json.RawMessage `json:"message"`
 }
 
 func HandleWebsocket(authService *service.AuthService, roomRepo *repository.RoomRepository, channelRepo *repository.ChannelRepository) http.HandlerFunc {
@@ -154,7 +155,9 @@ func HandleWebsocket(authService *service.AuthService, roomRepo *repository.Room
 				incoming.From = username
 			}
 
-			log.Printf("[RECV] %s | type=%s | to=%s\n", username, incoming.Type, incoming.To)
+			log.Printf(
+				"[RECV] %s | type=%s | ts=%d", username, incoming.Type, incoming.Timestamp,
+			)
 
 			switch incoming.Type {
 			case "join":
