@@ -143,7 +143,7 @@ class WebRTCSFUService {
           print('[SFU] play() failed: $e');
         }
       }).toJS;
-      _pc!.ontrack = ((web.RTCTrackEvent event) async {
+      _pc!.ontrack = ((web.RTCTrackEvent event) {
         final track = event.track;
         final streams = event.streams.toDart;
 
@@ -191,8 +191,8 @@ class WebRTCSFUService {
         );
 
         try {
-          await _audioElement!.play().toDart;
-          print('[SFU] play() success');
+          _audioElement!.play();
+          print('[SFU] play() called');
         } catch (e) {
           print('[SFU] play() failed: $e');
         }
