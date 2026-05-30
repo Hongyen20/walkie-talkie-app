@@ -12,8 +12,8 @@ class WebRTCSFUService {
   String? _channelId;
   String? _token;
   String? _peerId;
-  Timer? _statsTimer;
-
+  
+  
   // Mỗi remote stream có audio element riêng — tránh srcObject bị overwrite
   final Map<String, web.HTMLAudioElement> _audioElements = {};
 
@@ -192,12 +192,6 @@ class WebRTCSFUService {
 
       // ontrack sẽ fire tại đây nếu answer có track của existing peers
       print('[SFU] Connected to SFU (peerId: ${peerId ?? "default"})');
-
-      _statsTimer?.cancel();
-      _statsTimer = Timer.periodic(
-        const Duration(seconds: 5),
-        (_) => _printStats(),
-      );
       return true;
     } catch (e) {
       print('[SFU] Connect error: $e');
@@ -322,8 +316,6 @@ class WebRTCSFUService {
   // ─── Disconnect ───────────────────────────────────────────────────────────
 
   Future<void> disconnect() async {
-    _statsTimer?.cancel();
-    _statsTimer = null;
     if (_token != null && _roomId != null && _channelId != null) {
       try {
         var leaveUrl =
@@ -442,23 +434,6 @@ class WebRTCSFUService {
     }
   }
 
-  Future<void> _printStats() async {
-    if (_pc == null) return;
-
-    try {
-      final stats = await _pc!.getStats().toDart;
-
-      for (final entry in stats.entries.toDart) {
-        final report = entry.value;
-
-        if (report.type == 'candidate-pair') {
-          print('[WEBRTC STATS] ${report.toJSON()}');
-        }
-      }
-    } catch (e) {
-      print('[WEBRTC STATS] error: $e');
-    }
-  }
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   void _tryPlay(web.HTMLAudioElement audioEl, String streamId) {

@@ -206,6 +206,13 @@ class _ChannelScreenState extends State<ChannelScreen> {
         break;
 
       case 'ptt-start':
+        final sentTime = msg['timestamp'];
+
+        if (sentTime != null) {
+          final latency = DateTime.now().millisecondsSinceEpoch - sentTime;
+
+          print('[TEST] PTT latency = $latency ms');
+        }
         setState(() => _talkingUser = from);
         _addLog('$from is talking...');
         break;
@@ -288,7 +295,10 @@ class _ChannelScreenState extends State<ChannelScreen> {
       _talkingUser = widget.user.username;
     });
     _sfuService.startTalking();
-    _wsService.send({'type': 'ptt-start'});
+    _wsService.send({
+      'type': 'ptt-start',
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    });
     _addLog('You are talking...');
   }
 
