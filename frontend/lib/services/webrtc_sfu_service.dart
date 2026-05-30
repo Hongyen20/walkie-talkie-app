@@ -12,8 +12,8 @@ class WebRTCSFUService {
   String? _channelId;
   String? _token;
   String? _peerId;
-  
-  
+  DateTime? _connectStartTime;
+
   // Mỗi remote stream có audio element riêng — tránh srcObject bị overwrite
   final Map<String, web.HTMLAudioElement> _audioElements = {};
 
@@ -72,13 +72,16 @@ class WebRTCSFUService {
     String channelId, {
     String? peerId,
   }) async {
+    final startTime = DateTime.now();
+
+    _connectStartTime = DateTime.now();
+
     _token = token;
     _roomId = roomId;
     _channelId = channelId;
     _peerId = peerId;
     _renegQueue.clear();
     _renegBusy = false;
-
     if (_pc != null) {
       _pc!.close();
       _pc = null;
@@ -190,7 +193,10 @@ class WebRTCSFUService {
           )
           .toDart;
 
-      // ontrack sẽ fire tại đây nếu answer có track của existing peers
+      final duration = DateTime.now().difference(startTime).inMilliseconds;
+
+      print('[SFU] Connection setup time = ${duration} ms');
+
       print('[SFU] Connected to SFU (peerId: ${peerId ?? "default"})');
       return true;
     } catch (e) {
@@ -281,10 +287,15 @@ class WebRTCSFUService {
   void _setupOnConnectionState() {
     _pc!.onconnectionstatechange = (web.Event event) {
       final state = _pc?.connectionState ?? '';
-      print(
-        '[SFU] Connection state: $state '
-        '(peerId: ${_peerId ?? "default"})',
-      );
+
+      if (state == 'connected' && _connectStartTime != null) {
+        final duration = DateTime.now()
+            .difference(_connectStartTime!)
+            .inMilliseconds;
+
+        print('[SFU] CONNECT TIME = ${duration} ms');
+      }
+
       onStatusChange?.call(state);
     }.toJS;
   }
