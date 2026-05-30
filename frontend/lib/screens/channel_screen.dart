@@ -206,13 +206,20 @@ class _ChannelScreenState extends State<ChannelScreen> {
         break;
 
       case 'ptt-start':
-        final sentTime = msg['timestamp'];
+        final now = DateTime.now().millisecondsSinceEpoch;
 
-        if (sentTime != null) {
-          final latency = DateTime.now().millisecondsSinceEpoch - sentTime;
+        final ts = data['timestamp'];
 
-          print('[TEST] PTT latency = $latency ms');
+        if (ts != null) {
+          final latency = now - (ts as int);
+
+          print('================================');
+          print('PTT LATENCY = ${latency} ms');
+          print('================================');
+
+          _addLog('PTT Latency: ${latency}ms');
         }
+
         setState(() => _talkingUser = from);
         _addLog('$from is talking...');
         break;
