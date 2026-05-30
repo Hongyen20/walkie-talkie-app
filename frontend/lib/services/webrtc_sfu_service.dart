@@ -61,6 +61,22 @@ class WebRTCSFUService {
       final config = web.RTCConfiguration(
         iceServers: [
           web.RTCIceServer(urls: 'stun:stun.l.google.com:19302'.toJS),
+          web.RTCIceServer(urls: 'stun:openrelay.metered.ca:80'.toJS),
+          web.RTCIceServer(
+            urls: 'turn:openrelay.metered.ca:80'.toJS,
+            username: 'openrelayproject'.toJS,
+            credential: 'openrelayproject'.toJS,
+          ),
+          web.RTCIceServer(
+            urls: 'turn:openrelay.metered.ca:443'.toJS,
+            username: 'openrelayproject'.toJS,
+            credential: 'openrelayproject'.toJS,
+          ),
+          web.RTCIceServer(
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp'.toJS,
+            username: 'openrelayproject'.toJS,
+            credential: 'openrelayproject'.toJS,
+          ),
         ].toJS,
       );
       _pc = web.RTCPeerConnection(config);
