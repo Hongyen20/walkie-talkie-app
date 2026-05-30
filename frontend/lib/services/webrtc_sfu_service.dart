@@ -13,15 +13,21 @@ class WebRTCSFUService {
   String? _token;
   String? _peerId;
 
-  web.HTMLAudioElement? _audioElement;
+  // FIX: Map per-stream audio elements thay vì 1 element dùng chung.
+  // Khi SFU add track mới (peer thứ 2 join), ontrack fire thêm 1 lần
+  // với stream mới → cần element riêng, không overwrite srcObject cũ.
+  final Map<String, web.HTMLAudioElement> _audioElements = {};
+
   Function(String)? onStatusChange;
 
   final _renegQueue = <String>[];
   bool _renegBusy = false;
 
-  // Flag để unlock audio sau user gesture
+  // Flag để unlock audio sau user gesture (getUserMedia = gesture đủ để unlock)
   static bool _audioUnlocked = false;
   static final List<web.HTMLAudioElement> _pendingPlay = [];
+
+  // ─── Init mic ────────────────────────────────────────────────────────────
 
   Future<bool> initLocalStream() async {
     try {
@@ -32,10 +38,12 @@ class WebRTCSFUService {
       _localStream = await web.window.navigator.mediaDevices
           .getUserMedia(constraints)
           .toDart;
+
+      // Mute ngay — chỉ enable khi user nhấn PTT
       _localStream!.getAudioTracks().toDart.forEach((t) => t.enabled = false);
       print('[SFU] Mic initialized (peerId: ${_peerId ?? "default"})');
 
-      // Unlock audio ngay khi user grant mic permission (đây là user gesture)
+      // getUserMedia là user gesture → unlock audio autoplay
       _audioUnlocked = true;
       _playPending();
       return true;
@@ -46,7 +54,7 @@ class WebRTCSFUService {
   }
 
   static void _playPending() {
-    for (final el in _pendingPlay) {
+    for (final el in List<web.HTMLAudioElement>.from(_pendingPlay)) {
       el
           .play()
           .toDart
@@ -59,6 +67,8 @@ class WebRTCSFUService {
     }
     _pendingPlay.clear();
   }
+
+  // ─── Connect to SFU ──────────────────────────────────────────────────────
 
   Future<bool> connect(
     String token,
@@ -73,6 +83,7 @@ class WebRTCSFUService {
     _renegQueue.clear();
     _renegBusy = false;
 
+    // Đóng PC cũ nếu có
     if (_pc != null) {
       _pc!.close();
       _pc = null;
@@ -102,82 +113,84 @@ class WebRTCSFUService {
       );
       _pc = web.RTCPeerConnection(config);
 
+      // Add local mic track vào PC
       if (_localStream != null) {
         _localStream!.getTracks().toDart.forEach((track) {
           _pc!.addTrack(track, _localStream!);
         });
       }
 
+      // FIX: Tạo audio element riêng cho từng remote stream.
+      // ontrack có thể fire nhiều lần (mỗi lần 1 peer mới join room và
+      // server renegotiate để gửi track đó xuống).
+      // Nếu dùng 1 element duy nhất thì srcObject bị overwrite → chỉ
+      // nghe được peer cuối cùng join.
       _pc!.ontrack = ((web.RTCTrackEvent event) {
-        print(
-          '[SFU] ONTRACK '
-          'kind=${event.track.kind} '
-          'id=${event.track.id}',
-        );
         final streams = event.streams.toDart;
         final track = event.track;
 
         print(
-          '[SFU] Remote track '
-          'kind=${track.kind} '
-          'enabled=${track.enabled} '
-          'muted=${track.muted} '
-          'readyState=${track.readyState}',
+          '[SFU] ontrack kind=${track.kind} '
+          'id=${track.id} '
+          'streams=${streams.length}',
         );
-        if (streams.isEmpty) return;
+
+        if (streams.isEmpty) {
+          print('[SFU] ontrack: no streams, skip');
+          return;
+        }
+
         final stream = streams[0];
-        print('[SFU] stream audio tracks=${stream.getAudioTracks().length}');
-        if (_audioElement == null) {
-          _audioElement = web.HTMLAudioElement();
-          _audioElement!.autoplay = true;
-          _audioElement!.muted = false;
-          _audioElement!.volume = 1.0;
-          web.document.body!.append(_audioElement!);
+        final streamId = stream.id;
+
+        print(
+          '[SFU] Remote stream id=$streamId '
+          'audioTracks=${stream.getAudioTracks().length}',
+        );
+
+        // Tạo audio element mới cho stream này nếu chưa có
+        if (!_audioElements.containsKey(streamId)) {
+          final audioEl = web.HTMLAudioElement();
+          audioEl.autoplay = true;
+          audioEl.muted = false;
+          audioEl.volume = 1.0;
+          web.document.body!.append(audioEl);
+          _audioElements[streamId] = audioEl;
           print(
-            '[SFU] Created audio element (peerId: ${_peerId ?? "default"})',
+            '[SFU] Created audio element for stream $streamId '
+            '(peerId: ${_peerId ?? "default"})',
           );
         }
 
-        _audioElement!.srcObject = stream;
+        final audioEl = _audioElements[streamId]!;
+        audioEl.srcObject = stream;
+
         print(
-          '[SFU] Audio element muted=${_audioElement!.muted} '
-          'volume=${_audioElement!.volume}',
+          '[SFU] Audio element updated '
+          'muted=${audioEl.muted} volume=${audioEl.volume}',
         );
-        print('[SFU] Audio stream updated (peerId: ${_peerId ?? "default"})');
 
         if (_audioUnlocked) {
-          try {
-            _audioElement!
-                .play()
-                .toDart
-                .then((_) {
-                  print('[SFU] play() success');
-                })
-                .catchError((e) {
-                  print('[SFU] play() blocked: $e');
-                  if (!_pendingPlay.contains(_audioElement)) {
-                    _pendingPlay.add(_audioElement!);
-                  }
-                });
-            print('[SFU] play() called');
-          } catch (e) {
-            print('[SFU] play() failed: $e');
-          }
+          _tryPlay(audioEl, streamId);
         } else {
-          // Chưa unlock → thêm vào pending list
-          print('[SFU] Audio pending unlock (peerId: ${_peerId ?? "default"})');
-          _pendingPlay.add(_audioElement!);
+          print('[SFU] Audio pending unlock stream=$streamId');
+          if (!_pendingPlay.contains(audioEl)) {
+            _pendingPlay.add(audioEl);
+          }
         }
       }).toJS;
 
+      // Connection state
       _pc!.onconnectionstatechange = (web.Event event) {
         final state = _pc?.connectionState ?? '';
         print(
-          '[SFU] Connection state: $state (peerId: ${_peerId ?? "default"})',
+          '[SFU] Connection state: $state '
+          '(peerId: ${_peerId ?? "default"})',
         );
         onStatusChange?.call(state);
       }.toJS;
 
+      // Tạo offer và gửi lên server
       final offer = await _pc!.createOffer().toDart;
       final offerSdp = offer?.sdp ?? '';
       await _pc!
@@ -221,10 +234,11 @@ class WebRTCSFUService {
     }
   }
 
+  // ─── PTT controls ────────────────────────────────────────────────────────
+
   void startTalking() {
     _localStream?.getAudioTracks().toDart.forEach((t) {
       t.enabled = true;
-
       print(
         '[SFU] START TALK '
         'enabled=${t.enabled} '
@@ -232,14 +246,12 @@ class WebRTCSFUService {
         'readyState=${t.readyState}',
       );
     });
-
     print('[SFU] Mic ENABLED');
   }
 
   void stopTalking() {
     _localStream?.getAudioTracks().toDart.forEach((t) {
       t.enabled = false;
-
       print(
         '[SFU] STOP TALK '
         'enabled=${t.enabled} '
@@ -247,11 +259,13 @@ class WebRTCSFUService {
         'readyState=${t.readyState}',
       );
     });
-
     print('[SFU] Mic DISABLED');
   }
 
+  // ─── Disconnect ───────────────────────────────────────────────────────────
+
   Future<void> disconnect() async {
+    // Gửi leave lên server
     if (_token != null && _roomId != null && _channelId != null) {
       try {
         var leaveUrl =
@@ -273,15 +287,23 @@ class WebRTCSFUService {
     _renegQueue.clear();
     _renegBusy = false;
 
-    if (_audioElement != null) {
-      _pendingPlay.remove(_audioElement);
-      _audioElement?.parentNode?.removeChild(_audioElement!);
-      _audioElement = null;
+    // FIX: Cleanup tất cả audio elements
+    for (final entry in _audioElements.entries) {
+      final el = entry.value;
+      _pendingPlay.remove(el);
+      try {
+        el.parentNode?.removeChild(el);
+      } catch (_) {}
     }
+    _audioElements.clear();
 
     print('[SFU] Disconnected (peerId: ${_peerId ?? "default"})');
   }
 
+  // ─── Renegotiation ────────────────────────────────────────────────────────
+
+  /// Gọi khi nhận được sfu-renegotiate từ WebSocket.
+  /// Queue để tránh race condition khi nhiều peer join gần cùng lúc.
   void handleRenegotiate(String offerSdp) {
     _renegQueue.add(offerSdp);
     _processRenegQueue();
@@ -292,6 +314,7 @@ class WebRTCSFUService {
     _renegBusy = true;
 
     while (_renegQueue.isNotEmpty) {
+      // Chỉ xử lý offer mới nhất — bỏ qua các offer cũ hơn trong queue
       final offerSdp = _renegQueue.last;
       _renegQueue.clear();
       await _doRenegotiate(offerSdp);
@@ -303,23 +326,30 @@ class WebRTCSFUService {
   Future<void> _doRenegotiate(String offerSdp) async {
     if (_pc == null || _token == null) return;
 
-    // Chờ tối đa 5 giây cho đến khi PC ở trạng thái stable
+    // Chờ tối đa 5 giây cho signaling state về stable hoặc have-remote-offer
     for (int i = 0; i < 50; i++) {
-      final s = _pc?.signalingState ?? '';
+      final s = _pc?.signalingState ?? 'closed';
       if (s == 'stable' || s == 'have-remote-offer') break;
-      if (s == 'closed' || _pc == null) return;
+      if (s == 'closed' || _pc == null) {
+        print('[SFU] Renegotiate aborted — PC closed');
+        return;
+      }
       await Future.delayed(const Duration(milliseconds: 100));
     }
 
-    final signalingState = _pc?.signalingState ?? '';
+    final signalingState = _pc?.signalingState ?? 'closed';
     if (signalingState != 'stable' && signalingState != 'have-remote-offer') {
       print(
-        '[SFU] Skip renegotiate — still wrong state: $signalingState (peerId: ${_peerId ?? "default"})',
+        '[SFU] Skip renegotiate — wrong state: $signalingState '
+        '(peerId: ${_peerId ?? "default"})',
       );
       return;
     }
 
-    print('[SFU] Handling renegotiation (peerId: ${_peerId ?? "default"})');
+    print(
+      '[SFU] Handling renegotiation state=$signalingState '
+      '(peerId: ${_peerId ?? "default"})',
+    );
     try {
       await _pc!
           .setRemoteDescription(
@@ -358,5 +388,22 @@ class WebRTCSFUService {
     } catch (e) {
       print('[SFU] Renegotiate error: $e');
     }
+  }
+
+  // ─── Helpers ─────────────────────────────────────────────────────────────
+
+  void _tryPlay(web.HTMLAudioElement audioEl, String streamId) {
+    audioEl
+        .play()
+        .toDart
+        .then((_) {
+          print('[SFU] play() success stream=$streamId');
+        })
+        .catchError((e) {
+          print('[SFU] play() blocked stream=$streamId: $e');
+          if (!_pendingPlay.contains(audioEl)) {
+            _pendingPlay.add(audioEl);
+          }
+        });
   }
 }

@@ -51,12 +51,8 @@ func (h *SFUHandler) HandleOffer(w http.ResponseWriter, r *http.Request) {
 
 	roomID := r.URL.Query().Get("room_id")
 	channelID := r.URL.Query().Get("channel_id")
-	if roomID == "" {
-		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "missing room_id"})
-		return
-	}
-	if channelID == "" {
-		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "missing channel_id"})
+	if roomID == "" || channelID == "" {
+		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "missing room_id or channel_id"})
 		return
 	}
 
@@ -74,20 +70,20 @@ func (h *SFUHandler) HandleOffer(w http.ResponseWriter, r *http.Request) {
 	roomKey := roomID + "_" + channelID
 	sfuRoom := h.manager.GetOrCreateRoom(roomKey)
 
-	// Set OnRenegotiate mỗi lần offer — đảm bảo luôn có callback kể cả sau reconnect
+	// ── FIX: Set OnRenegotiate TRƯỚC khi HandleOffer/CreatePeer ──
 	cID := channelID
 	sfuRoom.OnRenegotiate = func(pid string, sdp string) {
-		log.Printf("[SFU] Sending renegotiate to %s\n", pid)
-		if h.notifyFunc != nil {
-			wsTarget := strings.TrimSuffix(pid, "_broadcast")
-			log.Printf("[SFU] Renegotiate WS target: %s (from peerID: %s) channel: %s\n", wsTarget, pid, cID)
-			h.notifyFunc(wsTarget, map[string]interface{}{
-				"type":       "sfu-renegotiate",
-				"message":    sdp,
-				"channel_id": cID,
-				"is_broadcast": strings.HasSuffix(pid, "_broadcast"),
-			})
+		if h.notifyFunc == nil {
+			return
 		}
+		wsTarget := strings.TrimSuffix(pid, "_broadcast")
+		log.Printf("[SFU] Renegotiate -> WS target=%s (peerID=%s channel=%s)\n", wsTarget, pid, cID)
+		h.notifyFunc(wsTarget, map[string]interface{}{
+			"type":         "sfu-renegotiate",
+			"message":      sdp,
+			"channel_id":   cID,
+			"is_broadcast": strings.HasSuffix(pid, "_broadcast"),
+		})
 	}
 
 	answerSDP, err := sfuRoom.HandleOffer(peerID, body.SDP)
