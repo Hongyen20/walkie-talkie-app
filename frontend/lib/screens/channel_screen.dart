@@ -208,7 +208,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
       case 'ptt-start':
         final now = DateTime.now().millisecondsSinceEpoch;
 
-        final ts = data['timestamp'];
+        final ts = msg['timestamp'];
 
         if (ts != null) {
           final latency = now - (ts as int);
