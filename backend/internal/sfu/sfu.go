@@ -136,8 +136,13 @@ func (r *SFURoom) CreatePeer(peerID string) (*Peer, error) {
 
 	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
 		log.Printf("[SFU] %s ICE: %s\n", peerID, state)
-		if state == webrtc.ICEConnectionStateFailed || state == webrtc.ICEConnectionStateDisconnected {
-			r.RemovePeer(peerID)
+		if state == webrtc.ICEConnectionStateDisconnected {
+			go func() {
+				time.Sleep(15 * time.Second)
+				if pc.ICEConnectionState() == webrtc.ICEConnectionStateDisconnected {
+					r.RemovePeer(peerID)
+				}
+			}()
 		}
 	})
 
@@ -192,9 +197,23 @@ func (r *SFURoom) CreatePeer(peerID string) (*Peer, error) {
 			defer ep.renegMu.Unlock()
 
 			// Kiểm tra signaling state — phải là stable mới tạo offer được
-			state := ep.PeerConnection.SignalingState()
-			if state != webrtc.SignalingStateStable {
-				log.Printf("[SFU] Skip renegotiate for %s — not stable: %s\n", epID, state)
+			for i := 0; i < 20; i++ {
+				if ep.PeerConnection.SignalingState() ==
+					webrtc.SignalingStateStable {
+					break
+				}
+
+				time.Sleep(100 * time.Millisecond)
+			}
+
+			if ep.PeerConnection.SignalingState() !=
+				webrtc.SignalingStateStable {
+
+				log.Printf(
+					"[SFU] Renegotiate timeout for %s state=%s",
+					epID,
+					ep.PeerConnection.SignalingState(),
+				)
 				return
 			}
 
@@ -229,22 +248,40 @@ func (r *SFURoom) CreatePeer(peerID string) (*Peer, error) {
 func (r *SFURoom) RemovePeer(peerID string) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+
 	if peer, ok := r.Peers[peerID]; ok {
+
 		peer.PeerConnection.Close()
+
 		delete(r.Peers, peerID)
-		log.Printf("[SFU] Peer %s left room %s\n", peerID, r.ID)
+
+		log.Printf(
+			"[SFU] Peer %s left room %s\n",
+			peerID,
+			r.ID,
+		)
 	}
 }
 
 func (r *SFURoom) forwardRTP(senderID string, packet *rtp.Packet) {
 	r.mutex.RLock()
-	sender, ok := r.Peers[senderID]
-	r.mutex.RUnlock()
-	if !ok {
-		return
-	}
-	if err := sender.AudioTrack.WriteRTP(packet); err != nil {
-		log.Printf("[SFU] Forward error writing to sender track %s: %v\n", senderID, err)
+	defer r.mutex.RUnlock()
+
+	for peerID, peer := range r.Peers {
+
+		if peerID == senderID {
+			continue
+		}
+
+		if err := peer.AudioTrack.WriteRTP(packet); err != nil {
+
+			log.Printf(
+				"[SFU] Forward RTP %s -> %s error: %v",
+				senderID,
+				peerID,
+				err,
+			)
+		}
 	}
 }
 
@@ -292,4 +329,60 @@ func (r *SFURoom) getPeer(peerID string) (*Peer, bool) {
 	defer r.mutex.RUnlock()
 	peer, ok := r.Peers[peerID]
 	return peer, ok
+}
+
+func (r *SFURoom) renegotiateAll() {
+
+	r.mutex.RLock()
+
+	peers := make([]*Peer, 0)
+
+	for _, p := range r.Peers {
+		peers = append(peers, p)
+	}
+
+	r.mutex.RUnlock()
+
+	for _, peer := range peers {
+
+		go func(p *Peer) {
+
+			p.renegMu.Lock()
+			defer p.renegMu.Unlock()
+
+			if p.PeerConnection.SignalingState() !=
+				webrtc.SignalingStateStable {
+				return
+			}
+
+			offer, err :=
+				p.PeerConnection.CreateOffer(nil)
+
+			if err != nil {
+				return
+			}
+
+			if err =
+				p.PeerConnection.SetLocalDescription(
+					offer,
+				); err != nil {
+				return
+			}
+
+			<-webrtc.GatheringCompletePromise(
+				p.PeerConnection,
+			)
+
+			if r.OnRenegotiate != nil {
+
+				r.OnRenegotiate(
+					p.ID,
+					p.PeerConnection.
+						LocalDescription().
+						SDP,
+				)
+			}
+
+		}(peer)
+	}
 }

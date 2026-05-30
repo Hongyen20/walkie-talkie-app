@@ -217,12 +217,22 @@ class WebRTCSFUService {
   Future<void> _doRenegotiate(String offerSdp) async {
     if (_pc == null || _token == null) return;
 
-    // Chờ tối đa 3 giây cho đến khi PC ở trạng thái stable hoặc have-remote-offer
-    for (int i = 0; i < 30; i++) {
-      final s = _pc?.signalingState ?? '';
-      if (s == 'stable' || s == 'have-remote-offer') break;
-      if (s == 'closed' || _pc == null) return;
-      print('[SFU] Waiting for stable state: $s (attempt $i)');
+    for (int i = 0; i < 50; i++) {
+      final state = _pc?.signalingState ?? '';
+
+      if (state == 'stable') {
+        break;
+      }
+
+      if (state == 'closed') {
+        return;
+      }
+
+      print(
+        '[SFU] Waiting stable: $state '
+        '(attempt $i)',
+      );
+
       await Future.delayed(const Duration(milliseconds: 100));
     }
     final signalingState = _pc?.signalingState ?? '';
@@ -235,11 +245,17 @@ class WebRTCSFUService {
 
     print('[SFU] Handling renegotiation (peerId: ${_peerId ?? "default"})');
     try {
-      await _pc!
-          .setRemoteDescription(
-            web.RTCSessionDescriptionInit(sdp: offerSdp, type: 'offer'),
-          )
-          .toDart;
+      try {
+        await _pc!
+            .setRemoteDescription(
+              web.RTCSessionDescriptionInit(sdp: offerSdp, type: 'offer'),
+            )
+            .toDart;
+      } catch (e) {
+        print('[SFU] setRemoteDescription failed: $e');
+
+        return;
+      }
 
       final answer = await _pc!.createAnswer().toDart;
       final answerSdp = answer?.sdp ?? '';

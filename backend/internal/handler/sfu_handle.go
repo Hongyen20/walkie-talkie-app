@@ -85,6 +85,7 @@ func (h *SFUHandler) HandleOffer(w http.ResponseWriter, r *http.Request) {
 				"type":       "sfu-renegotiate",
 				"message":    sdp,
 				"channel_id": cID,
+				"is_broadcast": strings.HasSuffix(pid, "_broadcast"),
 			})
 		}
 	}

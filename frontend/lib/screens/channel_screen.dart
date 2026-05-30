@@ -33,7 +33,8 @@ class _ChannelScreenState extends State<ChannelScreen> {
   bool _webrtcReady = false;
   String _talkingUser = '--';
   List<String> _activityLog = [];
-
+  bool _micReady = false;
+  bool _sfuConnected = false;
   // peerID của PTT connection — dùng username (không có _broadcast suffix)
   late String _myPeerID;
 
@@ -92,20 +93,46 @@ class _ChannelScreenState extends State<ChannelScreen> {
 
   Future<void> _initWebRTC() async {
     final ok = await _sfuService.initLocalStream();
+
     print('[CHANNEL] initLocalStream: $ok');
+
     if (!ok) {
-      setState(() => _webrtcReady = false);
+      setState(() {
+        _micReady = false;
+        _sfuConnected = false;
+        _webrtcReady = false;
+      });
+
       _addLog('Microphone access denied');
       return;
     }
 
+    setState(() {
+      _micReady = true;
+    });
+
     _sfuService.onStatusChange = (state) {
       print('[CHANNEL] SFU status: $state');
+
       if (state == 'connected') {
-        setState(() => _webrtcReady = true);
+        setState(() {
+          _sfuConnected = true;
+          _webrtcReady = true;
+        });
+
         _addLog('Connected to SFU');
-      } else if (state == 'failed' || state == 'disconnected') {
-        setState(() => _webrtcReady = false);
+      } else if (state == 'connecting') {
+        setState(() {
+          _sfuConnected = false;
+        });
+      } else if (state == 'failed' ||
+          state == 'disconnected' ||
+          state == 'closed') {
+        setState(() {
+          _sfuConnected = false;
+          _webrtcReady = false;
+        });
+
         _addLog('SFU disconnected');
         // Auto reconnect sau 2 giây
         Future.delayed(const Duration(seconds: 2), () {
@@ -205,6 +232,13 @@ class _ChannelScreenState extends State<ChannelScreen> {
         break;
 
       case 'sfu-renegotiate':
+        final isBroadcast = msg['is_broadcast'] == true;
+
+        if (isBroadcast) {
+          print('[CHANNEL WS] Ignore broadcast renegotiate');
+
+          break;
+        }
         final newSdp = msg['message']?.toString() ?? '';
         final renegChannelId = msg['channel_id']?.toString() ?? '';
 
@@ -230,11 +264,6 @@ class _ChannelScreenState extends State<ChannelScreen> {
         // Kiểm tra SDP: nếu offer chứa track của chính mình (echo) thì bỏ qua
         // Nếu offer là cho broadcast peer (_broadcast suffix) thì bỏ qua
         // room_screen sẽ tự handle broadcast renegotiate qua _broadcastWs
-        final isBroadcastOffer = newSdp.contains('${_myPeerID}_broadcast');
-        if (isBroadcastOffer) {
-          print('[CHANNEL WS] Skipping broadcast renegotiate offer');
-          break;
-        }
 
         print('[CHANNEL WS] Handling PTT renegotiate');
         _sfuService.handleRenegotiate(newSdp);
@@ -482,15 +511,13 @@ class _ChannelScreenState extends State<ChannelScreen> {
                     child: Row(
                       children: [
                         Icon(
-                          _webrtcReady
-                              ? Icons.mic_rounded
-                              : Icons.mic_off_rounded,
+                          _micReady ? Icons.mic_rounded : Icons.mic_off_rounded,
                           size: 14,
                           color: _webrtcReady ? _blue : const Color(0xFFEF4444),
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          _webrtcReady ? 'Ready' : 'No mic',
+                          _micReady ? 'Ready' : 'No mic',
                           style: TextStyle(
                             color: _webrtcReady
                                 ? _blue
