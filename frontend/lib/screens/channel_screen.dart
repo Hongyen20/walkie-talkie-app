@@ -210,16 +210,6 @@ class _ChannelScreenState extends State<ChannelScreen> {
 
         final ts = msg['timestamp'];
 
-        if (ts != null) {
-          final latency = now - (ts as int);
-
-          print('================================');
-          print('PTT LATENCY = ${latency} ms');
-          print('================================');
-
-          _addLog('PTT Latency: ${latency}ms');
-        }
-
         setState(() => _talkingUser = from);
         _addLog('$from is talking...');
         break;
@@ -547,38 +537,6 @@ class _ChannelScreenState extends State<ChannelScreen> {
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: _showChannelMembers,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEEF2FF),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(
-                            Icons.people_outline_rounded,
-                            color: _blue,
-                            size: 14,
-                          ),
-                          SizedBox(width: 4),
-                          Text(
-                            'Members',
-                            style: TextStyle(
-                              color: _blue,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
                   ),
                 ],
