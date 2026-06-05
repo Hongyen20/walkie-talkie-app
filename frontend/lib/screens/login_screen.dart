@@ -21,34 +21,74 @@ class _LoginScreenState extends State<LoginScreen> {
   String _error = '';
 
   Future<void> _login() async {
+    // Validate phía client trước khi gọi API
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (username.isEmpty) {
+      setState(() => _error = 'Please enter your username');
+      return;
+    }
+    if (password.isEmpty) {
+      setState(() => _error = 'Please enter your password');
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _error = '';
     });
 
-    final result = await _authService.login(
-      _usernameController.text.trim(),
-      _passwordController.text.trim(),
-    );
+    try {
+      final result = await _authService.login(username, password);
 
-    setState(() => _isLoading = false);
+      setState(() => _isLoading = false);
 
-    if (result['user'] != null) {
-      final user = result['user'] as User;
-      //Save store token
-      await StorageService.saveUser(
-        token: user.token,
-        userId: user.id,
-        username: user.username,
-        displayName: user.displayName,
-        inviteCode: user.inviteCode,
-      );
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => RoomListScreen(user: user)),
-      );
+      if (result['user'] != null) {
+        final user = result['user'] as User;
+        await StorageService.saveUser(
+          token: user.token,
+          userId: user.id,
+          username: user.username,
+          displayName: user.displayName,
+          inviteCode: user.inviteCode,
+        );
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => RoomListScreen(user: user)),
+        );
+      } else {
+        // FIX: Lấy message lỗi từ result nếu có, fallback về message mặc định
+        final msg =
+            result['message']?.toString() ?? result['error']?.toString() ?? '';
+        setState(() {
+          _error = msg.isNotEmpty
+              ? _mapErrorMessage(msg)
+              : 'Incorrect username or password';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _error = 'Connection error. Please try again.';
+      });
     }
+  }
+
+  /// Map error message từ server sang tiếng thân thiện hơn
+  String _mapErrorMessage(String serverMsg) {
+    final msg = serverMsg.toLowerCase();
+    if (msg.contains('not found') || msg.contains('user')) {
+      return 'Username not found';
+    }
+    if (msg.contains('password') || msg.contains('invalid')) {
+      return 'Incorrect password';
+    }
+    if (msg.contains('network') || msg.contains('connect')) {
+      return 'Connection error. Please try again.';
+    }
+    return 'Incorrect username or password';
   }
 
   @override
@@ -141,6 +181,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     TextField(
                       controller: _usernameController,
                       onSubmitted: (_) => _login(),
+                      // FIX: xóa _error khi user bắt đầu gõ lại
+                      onChanged: (_) {
+                        if (_error.isNotEmpty) setState(() => _error = '');
+                      },
                       style: const TextStyle(
                         fontSize: 15,
                         color: Color(0xFF111827),
@@ -155,6 +199,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         filled: true,
                         fillColor: const Color(0xFFF9FAFB),
+                        // Highlight border đỏ khi có lỗi
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: const BorderSide(
@@ -163,14 +208,18 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFE5E7EB),
+                          borderSide: BorderSide(
+                            color: _error.isNotEmpty
+                                ? const Color(0xFFEF4444)
+                                : const Color(0xFFE5E7EB),
                           ),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: Color(0xFF1A56DB),
+                          borderSide: BorderSide(
+                            color: _error.isNotEmpty
+                                ? const Color(0xFFEF4444)
+                                : const Color(0xFF1A56DB),
                             width: 1.5,
                           ),
                         ),
@@ -197,6 +246,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       controller: _passwordController,
                       obscureText: _obscurePassword,
                       onSubmitted: (_) => _login(),
+                      onChanged: (_) {
+                        if (_error.isNotEmpty) setState(() => _error = '');
+                      },
                       style: const TextStyle(
                         fontSize: 15,
                         color: Color(0xFF111827),
@@ -231,14 +283,18 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFE5E7EB),
+                          borderSide: BorderSide(
+                            color: _error.isNotEmpty
+                                ? const Color(0xFFEF4444)
+                                : const Color(0xFFE5E7EB),
                           ),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: Color(0xFF1A56DB),
+                          borderSide: BorderSide(
+                            color: _error.isNotEmpty
+                                ? const Color(0xFFEF4444)
+                                : const Color(0xFF1A56DB),
                             width: 1.5,
                           ),
                         ),
@@ -249,40 +305,47 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
 
-                    // Error
-                    if (_error.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFEF2F2),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFFECACA)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.error_outline_rounded,
-                              color: Color(0xFFEF4444),
-                              size: 16,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                _error,
-                                style: const TextStyle(
-                                  color: Color(0xFFEF4444),
-                                  fontSize: 13,
+                    // FIX: Error box với animation
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 200),
+                      child: _error.isNotEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.only(top: 12),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFEF2F2),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: const Color(0xFFFECACA),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.error_outline_rounded,
+                                      color: Color(0xFFEF4444),
+                                      size: 16,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        _error,
+                                        style: const TextStyle(
+                                          color: Color(0xFFEF4444),
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                            )
+                          : const SizedBox.shrink(),
+                    ),
 
                     const SizedBox(height: 24),
 
@@ -296,6 +359,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           backgroundColor: const Color(0xFF1A56DB),
                           foregroundColor: Colors.white,
                           elevation: 0,
+                          disabledBackgroundColor: const Color(
+                            0xFF1A56DB,
+                          ).withOpacity(0.6),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
