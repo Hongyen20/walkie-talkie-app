@@ -25,15 +25,6 @@ class _LoginScreenState extends State<LoginScreen> {
     final username = _usernameController.text.trim();
     final password = _passwordController.text.trim();
 
-    if (username.isEmpty) {
-      setState(() => _error = 'Please enter your username');
-      return;
-    }
-    if (password.isEmpty) {
-      setState(() => _error = 'Please enter your password');
-      return;
-    }
-
     setState(() {
       _isLoading = true;
       _error = '';
@@ -60,13 +51,10 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       } else {
         // FIX: Lấy message lỗi từ result nếu có, fallback về message mặc định
-        final msg =
-            result['message']?.toString() ?? result['error']?.toString() ?? '';
-        setState(() {
-          _error = msg.isNotEmpty
-              ? _mapErrorMessage(msg)
-              : 'Incorrect username or password';
-        });
+        final msg = result['error']?.toString() ?? '';
+setState(() {
+  _error = msg.isNotEmpty ? msg : 'Incorrect username or password';
+});
       }
     } catch (e) {
       setState(() {
