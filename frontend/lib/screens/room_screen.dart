@@ -21,8 +21,8 @@ class _RoomScreenState extends State<RoomScreen> {
   final _roomService = RoomService();
   List<Channel> _channels = [];
   bool _isLoading = true;
-
-  WebSocketService? _broadcastWs;
+  final List<WebSocketService> _broadcastWsList = [];
+  //WebSocketService? _broadcastWs;
   final List<WebRTCSFUService> _broadcastSfuList = [];
   bool _isBroadcasting = false;
   bool _broadcastReady = false;
@@ -46,8 +46,11 @@ class _RoomScreenState extends State<RoomScreen> {
   }
 
   Future<void> _teardownBroadcast() async {
-    _broadcastWs?.disconnect();
-    _broadcastWs = null;
+    for (final ws in _broadcastWsList) {
+      ws.disconnect();
+    }
+    _broadcastWsList.clear();
+
     for (final sfu in _broadcastSfuList) {
       await sfu.disconnect();
     }
@@ -75,6 +78,7 @@ class _RoomScreenState extends State<RoomScreen> {
 
     final broadcastPeerId = '${widget.user.username}_broadcast';
 
+    // Init mic 1 lần duy nhất
     final firstSfu = WebRTCSFUService();
     final micOk = await firstSfu.initLocalStream();
     if (!micOk) {
@@ -82,77 +86,69 @@ class _RoomScreenState extends State<RoomScreen> {
       return;
     }
 
-    // Auto-reconnect khi broadcast peer bị ICE failed
-    // Chỉ reconnect khi 'failed' — 'disconnected' có thể tự phục hồi
-    firstSfu.onStatusChange = (state) async {
-      if (state == 'failed' && mounted) {
-        print('[BROADCAST] Connection failed — reconnecting...');
-        await Future.delayed(const Duration(seconds: 3));
-        if (!mounted) return;
-        await firstSfu.connect(
-          widget.user.token,
-          widget.room.id,
-          _channels[0].id,
-          peerId: broadcastPeerId,
-        );
-      }
-    };
+    // Connect SFU + WS riêng cho từng channel
+    for (int i = 0; i < _channels.length; i++) {
+      final channel = _channels[i];
 
-    final firstConnected = await firstSfu.connect(
-      widget.user.token,
-      widget.room.id,
-      _channels[0].id,
-      peerId: broadcastPeerId,
-    );
-    if (!firstConnected) {
-      _showSnack('SFU connection failed', isError: true);
-      return;
-    }
-    _broadcastSfuList.add(firstSfu);
+      // SFU — dùng firstSfu cho channel đầu, tạo mới cho các channel sau
+      final sfu = i == 0 ? firstSfu : WebRTCSFUService();
+      if (i > 0) await sfu.initLocalStream();
 
-    for (int i = 1; i < _channels.length; i++) {
-      final sfu = WebRTCSFUService();
-      await sfu.initLocalStream();
+      sfu.onStatusChange = (state) async {
+        if (state == 'failed' && mounted) {
+          print('[BROADCAST] ch=${channel.name} failed — reconnecting...');
+          await Future.delayed(const Duration(seconds: 3));
+          if (!mounted) return;
+          await sfu.connect(
+            widget.user.token,
+            widget.room.id,
+            channel.id,
+            peerId: broadcastPeerId,
+          );
+        }
+      };
+
       final connected = await sfu.connect(
         widget.user.token,
         widget.room.id,
-        _channels[i].id,
+        channel.id,
         peerId: broadcastPeerId,
       );
-      if (connected) {
-        _broadcastSfuList.add(sfu);
-        print('[BROADCAST] Connected to channel: ${_channels[i].name}');
-      }
-    }
 
-    _broadcastWs = WebSocketService();
-    _broadcastWs!.onMessage = (msg) {
-      final type = msg['type'] ?? '';
-      if (type == 'sfu-renegotiate') {
-        final sdp = msg['message']?.toString() ?? '';
-        final channelId = msg['channel_id']?.toString() ?? '';
-        if (sdp.isEmpty) return;
-        for (int i = 0; i < _channels.length; i++) {
-          if (_channels[i].id == channelId && i < _broadcastSfuList.length) {
-            print('[BROADCAST] Renegotiate for channel: ${_channels[i].name}');
-            _broadcastSfuList[i].handleRenegotiate(sdp);
-            break;
+      if (!connected) {
+        print('[BROADCAST] SFU connect failed for channel: ${channel.name}');
+        continue;
+      }
+      _broadcastSfuList.add(sfu);
+
+      // FIX: Tạo WS riêng cho từng channel để nhận sfu-renegotiate
+      // đúng channel, không bỏ sót renegotiate từ channel[1], [2]...
+      final ws = WebSocketService();
+      final sfuRef = sfu; // capture đúng sfu cho closure
+
+      ws.onMessage = (msg) {
+        final type = msg['type'] ?? '';
+        if (type == 'sfu-renegotiate') {
+          final sdp = msg['message']?.toString() ?? '';
+          final msgChannelId = msg['channel_id']?.toString() ?? '';
+          if (sdp.isEmpty) return;
+          if (msgChannelId.isEmpty || msgChannelId == channel.id) {
+            print('[BROADCAST] Renegotiate for channel: ${channel.name}');
+            sfuRef.handleRenegotiate(sdp);
           }
         }
-      }
-    };
+      };
 
-    // FIX: thêm ?broadcast=1 để server biết đây là broadcast-only WS
-    // → không add vào online list, không gửi user-joined/left
-    _broadcastWs!.connectBroadcast(
-      widget.user.token,
-      widget.room.id,
-      _channels[0].id,
-    );
+      ws.connectBroadcast(widget.user.token, widget.room.id, channel.id);
+
+      _broadcastWsList.add(ws);
+      print('[BROADCAST] Connected to channel: ${channel.name}');
+    }
 
     setState(() => _broadcastReady = _broadcastSfuList.isNotEmpty);
     print(
-      '[BROADCAST] Ready — connected to ${_broadcastSfuList.length}/${_channels.length} channels',
+      '[BROADCAST] Ready — '
+      '${_broadcastSfuList.length}/${_channels.length} channels',
     );
   }
 
@@ -165,7 +161,10 @@ class _RoomScreenState extends State<RoomScreen> {
     for (final sfu in _broadcastSfuList) {
       sfu.startTalking();
     }
-    _broadcastWs?.send({'type': 'broadcast-start'});
+    // Gửi broadcast-start qua tất cả WS
+    for (final ws in _broadcastWsList) {
+      ws.send({'type': 'broadcast-start'});
+    }
   }
 
   void _stopBroadcast() {
@@ -174,7 +173,10 @@ class _RoomScreenState extends State<RoomScreen> {
     for (final sfu in _broadcastSfuList) {
       sfu.stopTalking();
     }
-    _broadcastWs?.send({'type': 'broadcast-stop'});
+    // Gửi broadcast-stop qua tất cả WS
+    for (final ws in _broadcastWsList) {
+      ws.send({'type': 'broadcast-stop'});
+    }
   }
 
   void _showSnack(String msg, {bool isError = false}) {
