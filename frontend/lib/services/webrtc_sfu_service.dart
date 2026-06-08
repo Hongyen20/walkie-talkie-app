@@ -124,7 +124,7 @@ class WebRTCSFUService {
       // FIX: Tạo offer SDP có sẵn recvonly m-lines để server có chỗ
       // nhét track của existing peers vào.
       //
-      // Cách làm: tạo 4 silent MediaStreamTrack bằng AudioContext.createMediaStreamDestination,
+      // Cách làm: tạo 10 silent MediaStreamTrack bằng AudioContext.createMediaStreamDestination,
       // add vào PC với stream riêng biệt → browser tạo m-line sendrecv/recvonly
       // tương ứng trong offer → server map existing peer tracks vào đó →
       // ontrack fire ngay sau setRemoteDescription(answer).
@@ -136,7 +136,7 @@ class WebRTCSFUService {
       final silentStreams = <web.MediaStream>[];
       try {
         final audioCtx = web.AudioContext();
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 10; i++) {
           final dest = audioCtx.createMediaStreamDestination();
           final silentStream = dest.stream;
           final tracks = silentStream.getAudioTracks().toDart;
