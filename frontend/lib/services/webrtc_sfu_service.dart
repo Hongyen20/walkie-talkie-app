@@ -64,6 +64,14 @@ class WebRTCSFUService {
     _pendingPlay.clear();
   }
 
+  web.MediaStream? get localStream => _localStream;
+
+  void setLocalStream(web.MediaStream stream) {
+    _localStream = stream;
+    _localStream!.getAudioTracks().toDart.forEach((t) => t.enabled = false);
+    _audioUnlocked = true;
+    _playPending();
+  }
   // ─── Connect ──────────────────────────────────────────────────────────────
 
   Future<bool> connect(

@@ -22,7 +22,6 @@ class _RoomScreenState extends State<RoomScreen> {
   List<Channel> _channels = [];
   bool _isLoading = true;
   final List<WebSocketService> _broadcastWsList = [];
-  //WebSocketService? _broadcastWs;
   final List<WebRTCSFUService> _broadcastSfuList = [];
   bool _isBroadcasting = false;
   bool _broadcastReady = false;
@@ -78,7 +77,7 @@ class _RoomScreenState extends State<RoomScreen> {
 
     final broadcastPeerId = '${widget.user.username}_broadcast';
 
-    // Init mic 1 lần duy nhất
+    // Init mic 1 lần duy nhất qua firstSfu
     final firstSfu = WebRTCSFUService();
     final micOk = await firstSfu.initLocalStream();
     if (!micOk) {
@@ -86,13 +85,25 @@ class _RoomScreenState extends State<RoomScreen> {
       return;
     }
 
-    // Connect SFU + WS riêng cho từng channel
+    // Tất cả SFU instances dùng chung localStream từ firstSfu
+    // để đảm bảo cùng số m-lines trong offer → tránh lỗi
+    // "The order of m-lines in answer doesn't match order in offer"
     for (int i = 0; i < _channels.length; i++) {
       final channel = _channels[i];
 
-      // SFU — dùng firstSfu cho channel đầu, tạo mới cho các channel sau
       final sfu = i == 0 ? firstSfu : WebRTCSFUService();
-      if (i > 0) await sfu.initLocalStream();
+
+      // FIX: Dùng lại localStream từ firstSfu thay vì gọi getUserMedia mới
+      // → tất cả offer có cùng cấu trúc m-lines → server không bị lỗi thứ tự
+      if (i > 0) {
+        if (firstSfu.localStream == null) {
+          print(
+            '[BROADCAST] firstSfu.localStream is null, skipping ch=${channel.name}',
+          );
+          continue;
+        }
+        sfu.setLocalStream(firstSfu.localStream!);
+      }
 
       sfu.onStatusChange = (state) async {
         if (state == 'failed' && mounted) {
@@ -121,10 +132,9 @@ class _RoomScreenState extends State<RoomScreen> {
       }
       _broadcastSfuList.add(sfu);
 
-      // FIX: Tạo WS riêng cho từng channel để nhận sfu-renegotiate
-      // đúng channel, không bỏ sót renegotiate từ channel[1], [2]...
+      // WS riêng cho từng channel để nhận sfu-renegotiate đúng channel
       final ws = WebSocketService();
-      final sfuRef = sfu; // capture đúng sfu cho closure
+      final sfuRef = sfu;
 
       ws.onMessage = (msg) {
         final type = msg['type'] ?? '';
@@ -140,7 +150,6 @@ class _RoomScreenState extends State<RoomScreen> {
       };
 
       ws.connectBroadcast(widget.user.token, widget.room.id, channel.id);
-
       _broadcastWsList.add(ws);
       print('[BROADCAST] Connected to channel: ${channel.name}');
     }
@@ -161,7 +170,6 @@ class _RoomScreenState extends State<RoomScreen> {
     for (final sfu in _broadcastSfuList) {
       sfu.startTalking();
     }
-    // Gửi broadcast-start qua tất cả WS
     for (final ws in _broadcastWsList) {
       ws.send({'type': 'broadcast-start'});
     }
@@ -173,7 +181,6 @@ class _RoomScreenState extends State<RoomScreen> {
     for (final sfu in _broadcastSfuList) {
       sfu.stopTalking();
     }
-    // Gửi broadcast-stop qua tất cả WS
     for (final ws in _broadcastWsList) {
       ws.send({'type': 'broadcast-stop'});
     }
