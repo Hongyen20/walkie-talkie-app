@@ -22,6 +22,9 @@ class WebRTCSFUService {
   final _renegQueue = <String>[];
   bool _renegBusy = false;
 
+  // FIX: lock để tránh reconnect chạy đè lên renegotiate
+  bool _connectBusy = false;
+
   static bool _audioUnlocked = false;
   static final List<web.HTMLAudioElement> _pendingPlay = [];
 
@@ -49,6 +52,18 @@ class WebRTCSFUService {
     }
   }
 
+  // Getter — để room_screen lấy localStream từ firstSfu
+  web.MediaStream? get localStream => _localStream;
+
+  // Setter — inject stream từ ngoài, không gọi getUserMedia mới
+  // Dùng cho broadcast SFU instances sau channel đầu tiên
+  void setLocalStream(web.MediaStream stream) {
+    _localStream = stream;
+    _localStream!.getAudioTracks().toDart.forEach((t) => t.enabled = false);
+    _audioUnlocked = true;
+    _playPending();
+  }
+
   static void _playPending() {
     for (final el in List<web.HTMLAudioElement>.from(_pendingPlay)) {
       el
@@ -64,14 +79,6 @@ class WebRTCSFUService {
     _pendingPlay.clear();
   }
 
-  web.MediaStream? get localStream => _localStream;
-
-  void setLocalStream(web.MediaStream stream) {
-    _localStream = stream;
-    _localStream!.getAudioTracks().toDart.forEach((t) => t.enabled = false);
-    _audioUnlocked = true;
-    _playPending();
-  }
   // ─── Connect ──────────────────────────────────────────────────────────────
 
   Future<bool> connect(
@@ -80,8 +87,27 @@ class WebRTCSFUService {
     String channelId, {
     String? peerId,
   }) async {
-    final startTime = DateTime.now();
+    // FIX: nếu đang connect/renegotiate thì chờ xong mới reconnect
+    if (_connectBusy) {
+      print('[SFU] connect() called while busy — skipping');
+      return false;
+    }
+    _connectBusy = true;
 
+    try {
+      return await _doConnect(token, roomId, channelId, peerId: peerId);
+    } finally {
+      _connectBusy = false;
+    }
+  }
+
+  Future<bool> _doConnect(
+    String token,
+    String roomId,
+    String channelId, {
+    String? peerId,
+  }) async {
+    final startTime = DateTime.now();
     _connectStartTime = DateTime.now();
 
     _token = token;
@@ -90,6 +116,11 @@ class WebRTCSFUService {
     _peerId = peerId;
     _renegQueue.clear();
     _renegBusy = false;
+
+    // FIX: gọi leave trước khi tạo PC mới để server xóa session cũ
+    // tránh lỗi "m-lines order doesn't match" khi reconnect
+    await _leaveServer();
+
     if (_pc != null) {
       _pc!.close();
       _pc = null;
@@ -122,29 +153,18 @@ class WebRTCSFUService {
       _setupOnTrack();
       _setupOnConnectionState();
 
-      // Add local mic track (sendrecv — 1 m-line cho send + receive)
+      // Add local mic track
       if (_localStream != null) {
         _localStream!.getTracks().toDart.forEach((track) {
           _pc!.addTrack(track, _localStream!);
         });
       }
 
-      // FIX: Tạo offer SDP có sẵn recvonly m-lines để server có chỗ
-      // nhét track của existing peers vào.
-      //
-      // Cách làm: tạo 10 silent MediaStreamTrack bằng AudioContext.createMediaStreamDestination,
-      // add vào PC với stream riêng biệt → browser tạo m-line sendrecv/recvonly
-      // tương ứng trong offer → server map existing peer tracks vào đó →
-      // ontrack fire ngay sau setRemoteDescription(answer).
-      //
-      // Sau khi connect, các track này bị disable → không tốn bandwidth.
-      //
-      // Đây là cách duy nhất không cần addTransceiver (type conflict) và
-      // không cần js_interop_unsafe.
+      // Tạo silent m-lines để server có chỗ map existing peer tracks
       final silentStreams = <web.MediaStream>[];
       try {
         final audioCtx = web.AudioContext();
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 4; i++) {
           final dest = audioCtx.createMediaStreamDestination();
           final silentStream = dest.stream;
           final tracks = silentStream.getAudioTracks().toDart;
@@ -153,11 +173,9 @@ class WebRTCSFUService {
             silentStreams.add(silentStream);
           }
         }
-        // Đóng AudioContext ngay — không cần nữa sau khi đã add track
         audioCtx.close();
       } catch (e) {
         print('[SFU] Warning: could not create silent tracks: $e');
-        // Không critical — renegotiate vẫn hoạt động như fallback
       }
 
       final offer = await _pc!.createOffer().toDart;
@@ -202,9 +220,7 @@ class WebRTCSFUService {
           .toDart;
 
       final duration = DateTime.now().difference(startTime).inMilliseconds;
-
       print('[SFU] Connection setup time = ${duration} ms');
-
       print('[SFU] Connected to SFU (peerId: ${peerId ?? "default"})');
       return true;
     } catch (e) {
@@ -226,9 +242,8 @@ class WebRTCSFUService {
         'streams=${streams.length}',
       );
 
-      // Bỏ qua track từ silent streams của chính mình
-      if (track.id.startsWith('audio_') == false &&
-          _localStream != null &&
+      // Bỏ qua track local của mình
+      if (_localStream != null &&
           _localStream!.getTrackById(track.id) != null) {
         print('[SFU] ontrack: skip local track ${track.id}');
         return;
@@ -242,7 +257,6 @@ class WebRTCSFUService {
         return;
       }
 
-      // Bỏ qua nếu stream chứa track local của mình
       final stream = streams[0];
       if (_localStream != null && stream.id == _localStream!.id) {
         print('[SFU] ontrack: skip local stream');
@@ -282,14 +296,9 @@ class WebRTCSFUService {
       'muted=${audioEl.muted} volume=${audioEl.volume}',
     );
 
-    if (_audioUnlocked) {
-      _tryPlay(audioEl, streamId);
-    } else {
-      print('[SFU] Audio pending unlock stream=$streamId');
-      if (!_pendingPlay.contains(audioEl)) {
-        _pendingPlay.add(audioEl);
-      }
-    }
+    // FIX: luôn thử play sau mỗi lần set srcObject
+    // không check _audioUnlocked vì _tryPlay đã có catchError → pendingPlay
+    _tryPlay(audioEl, streamId);
   }
 
   void _setupOnConnectionState() {
@@ -300,7 +309,6 @@ class WebRTCSFUService {
         final duration = DateTime.now()
             .difference(_connectStartTime!)
             .inMilliseconds;
-
         print('[SFU] CONNECT TIME = ${duration} ms');
       }
 
@@ -332,29 +340,36 @@ class WebRTCSFUService {
     print('[SFU] Mic DISABLED');
   }
 
+  // ─── Leave server session ─────────────────────────────────────────────────
+
+  Future<void> _leaveServer() async {
+    if (_token == null || _roomId == null || _channelId == null) return;
+    try {
+      var leaveUrl =
+          '${Constants.baseUrl}/sfu/leave?room_id=$_roomId&channel_id=$_channelId';
+      if (_peerId != null && _peerId!.isNotEmpty) {
+        leaveUrl += '&peer_id=$_peerId';
+      }
+      await http.delete(
+        Uri.parse(leaveUrl),
+        headers: {'Authorization': 'Bearer $_token'},
+      );
+      print('[SFU] Left server session (peerId: ${_peerId ?? "default"})');
+    } catch (e) {
+      print('[SFU] Leave error (ignored): $e');
+    }
+  }
+
   // ─── Disconnect ───────────────────────────────────────────────────────────
 
   Future<void> disconnect() async {
-    if (_token != null && _roomId != null && _channelId != null) {
-      try {
-        var leaveUrl =
-            '${Constants.baseUrl}/sfu/leave?room_id=$_roomId&channel_id=$_channelId';
-        if (_peerId != null && _peerId!.isNotEmpty) {
-          leaveUrl += '&peer_id=$_peerId';
-        }
-        await http.delete(
-          Uri.parse(leaveUrl),
-          headers: {'Authorization': 'Bearer $_token'},
-        );
-      } catch (e) {
-        print('[SFU] Leave error: $e');
-      }
-    }
+    await _leaveServer();
 
     _pc?.close();
     _pc = null;
     _renegQueue.clear();
     _renegBusy = false;
+    _connectBusy = false;
 
     for (final el in _audioElements.values) {
       _pendingPlay.remove(el);
@@ -370,6 +385,11 @@ class WebRTCSFUService {
   // ─── Renegotiation ────────────────────────────────────────────────────────
 
   void handleRenegotiate(String offerSdp) {
+    // FIX: không xử lý renegotiate khi đang connect
+    if (_connectBusy) {
+      print('[SFU] Renegotiate skipped — connect in progress');
+      return;
+    }
     _renegQueue.add(offerSdp);
     _processRenegQueue();
   }

@@ -35,8 +35,10 @@ class _ChannelScreenState extends State<ChannelScreen> {
   List<String> _activityLog = [];
   bool _micReady = false;
   bool _sfuConnected = false;
-  // peerID của PTT connection — dùng username (không có _broadcast suffix)
   late String _myPeerID;
+
+  // FIX: lock để tránh multiple reconnect chạy đồng thời
+  bool _reconnecting = false;
 
   static const _bg = Color(0xFFF0F4FF);
   static const _blue = Color(0xFF1A56DB);
@@ -47,7 +49,6 @@ class _ChannelScreenState extends State<ChannelScreen> {
   @override
   void initState() {
     super.initState();
-    // PTT peer ID = username (không có _broadcast suffix)
     _myPeerID = widget.user.username;
     _loadChannelMembers();
     _connectWebSocket();
@@ -93,7 +94,6 @@ class _ChannelScreenState extends State<ChannelScreen> {
 
   Future<void> _initWebRTC() async {
     final ok = await _sfuService.initLocalStream();
-
     print('[CHANNEL] initLocalStream: $ok');
 
     if (!ok) {
@@ -102,14 +102,11 @@ class _ChannelScreenState extends State<ChannelScreen> {
         _sfuConnected = false;
         _webrtcReady = false;
       });
-
       _addLog('Microphone access denied');
       return;
     }
 
-    setState(() {
-      _micReady = true;
-    });
+    setState(() => _micReady = true);
 
     _sfuService.onStatusChange = (state) {
       print('[CHANNEL] SFU status: $state');
@@ -118,13 +115,11 @@ class _ChannelScreenState extends State<ChannelScreen> {
         setState(() {
           _sfuConnected = true;
           _webrtcReady = true;
+          _reconnecting = false;
         });
-
         _addLog('Connected to SFU');
       } else if (state == 'connecting') {
-        setState(() {
-          _sfuConnected = false;
-        });
+        setState(() => _sfuConnected = false);
       } else if (state == 'failed' ||
           state == 'disconnected' ||
           state == 'closed') {
@@ -132,11 +127,11 @@ class _ChannelScreenState extends State<ChannelScreen> {
           _sfuConnected = false;
           _webrtcReady = false;
         });
+        _addLog('SFU disconnected — reconnecting...');
 
-        _addLog('SFU disconnected');
-        // Auto reconnect sau 2 giây
+        // FIX: debounce + lock để tránh multiple reconnect
         Future.delayed(const Duration(seconds: 2), () {
-          if (mounted && !_webrtcReady) {
+          if (mounted && !_webrtcReady && !_reconnecting) {
             _reconnectWebRTC();
           }
         });
@@ -144,13 +139,13 @@ class _ChannelScreenState extends State<ChannelScreen> {
     };
 
     print(
-      '[CHANNEL] Connecting to SFU room=${widget.room.id} channel=${widget.channel.id} peerID=$_myPeerID',
+      '[CHANNEL] Connecting to SFU room=${widget.room.id} '
+      'channel=${widget.channel.id} peerID=$_myPeerID',
     );
     final connected = await _sfuService.connect(
       widget.user.token,
       widget.room.id,
       widget.channel.id,
-      // Không truyền peerId → server dùng username từ JWT
     );
     print('[CHANNEL] SFU connect result: $connected');
     setState(() => _webrtcReady = connected);
@@ -158,15 +153,38 @@ class _ChannelScreenState extends State<ChannelScreen> {
   }
 
   Future<void> _reconnectWebRTC() async {
+    // FIX: cờ lock — nếu đang reconnect thì bỏ qua
+    if (_reconnecting) {
+      print('[CHANNEL] Already reconnecting — skipped');
+      return;
+    }
+    _reconnecting = true;
     print('[CHANNEL] Reconnecting WebRTC...');
+
+    // FIX: disconnect() gọi /sfu/leave trước → server xóa session cũ
+    // → connect() mới sẽ không bị lỗi m-lines order mismatch
+    await _sfuService.disconnect();
+
+    // Tạo lại mic vì disconnect() đã xóa localStream
+    final micOk = await _sfuService.initLocalStream();
+    if (!micOk) {
+      print('[CHANNEL] Reconnect: mic init failed');
+      if (mounted) setState(() => _reconnecting = false);
+      return;
+    }
+
     final connected = await _sfuService.connect(
       widget.user.token,
       widget.room.id,
       widget.channel.id,
     );
     print('[CHANNEL] Reconnect result: $connected');
+
     if (mounted) {
-      setState(() => _webrtcReady = connected);
+      setState(() {
+        _webrtcReady = connected;
+        _reconnecting = false;
+      });
     }
   }
 
@@ -206,10 +224,6 @@ class _ChannelScreenState extends State<ChannelScreen> {
         break;
 
       case 'ptt-start':
-        final now = DateTime.now().millisecondsSinceEpoch;
-
-        final ts = msg['timestamp'];
-
         setState(() => _talkingUser = from);
         _addLog('$from is talking...');
         break;
@@ -237,37 +251,25 @@ class _ChannelScreenState extends State<ChannelScreen> {
 
       case 'sfu-renegotiate':
         final isBroadcast = msg['is_broadcast'] == true;
-
         if (isBroadcast) {
           print('[CHANNEL WS] Ignore broadcast renegotiate');
-
           break;
         }
+
         final newSdp = msg['message']?.toString() ?? '';
         final renegChannelId = msg['channel_id']?.toString() ?? '';
 
         print(
-          '[CHANNEL WS] sfu-renegotiate for channel: $renegChannelId (mine: ${widget.channel.id})',
+          '[CHANNEL WS] sfu-renegotiate for channel: $renegChannelId '
+          '(mine: ${widget.channel.id})',
         );
 
         if (newSdp.isEmpty) break;
 
-        // Chỉ xử lý nếu đúng channel của mình
         if (renegChannelId.isNotEmpty && renegChannelId != widget.channel.id) {
           print('[CHANNEL WS] Ignoring renegotiate for different channel');
           break;
         }
-
-        // FIX: kiểm tra SDP có chứa peerID của mình không
-        // Server gửi renegotiate offer chứa track của peer mới
-        // Offer dành cho PTT peer (username) sẽ KHÔNG chứa "_broadcast" trong SSRC cname
-        // Offer dành cho broadcast peer sẽ chứa "_broadcast" trong SSRC cname
-        // Tuy nhiên cả 2 offer đều được gửi qua WS tới user
-        // Channel screen chỉ cần xử lý offer có m-line mới cho PTT peer
-
-        // Kiểm tra SDP: nếu offer chứa track của chính mình (echo) thì bỏ qua
-        // Nếu offer là cho broadcast peer (_broadcast suffix) thì bỏ qua
-        // room_screen sẽ tự handle broadcast renegotiate qua _broadcastWs
 
         print('[CHANNEL WS] Handling PTT renegotiate');
         _sfuService.handleRenegotiate(newSdp);
@@ -292,9 +294,6 @@ class _ChannelScreenState extends State<ChannelScreen> {
       _talkingUser = widget.user.username;
     });
     _sfuService.startTalking();
-    final ts = DateTime.now().millisecondsSinceEpoch;
-
-    print('SEND TS = $ts');
     _wsService.send({
       'type': 'ptt-start',
       'timestamp': DateTime.now().millisecondsSinceEpoch,
@@ -507,36 +506,47 @@ class _ChannelScreenState extends State<ChannelScreen> {
                       ],
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _webrtcReady
-                          ? const Color(0xFFEEF2FF)
-                          : const Color(0xFFFEF2F2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          _micReady ? Icons.mic_rounded : Icons.mic_off_rounded,
-                          size: 14,
-                          color: _webrtcReady ? _blue : const Color(0xFFEF4444),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          _micReady ? 'Ready' : 'No mic',
-                          style: TextStyle(
+                  GestureDetector(
+                    onTap: _showChannelMembers,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _webrtcReady
+                            ? const Color(0xFFEEF2FF)
+                            : const Color(0xFFFEF2F2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _micReady
+                                ? Icons.mic_rounded
+                                : Icons.mic_off_rounded,
+                            size: 14,
                             color: _webrtcReady
                                 ? _blue
                                 : const Color(0xFFEF4444),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 4),
+                          Text(
+                            _reconnecting
+                                ? 'Reconnecting...'
+                                : _micReady
+                                ? 'Ready'
+                                : 'No mic',
+                            style: TextStyle(
+                              color: _webrtcReady
+                                  ? _blue
+                                  : const Color(0xFFEF4444),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -793,7 +803,11 @@ class _ChannelScreenState extends State<ChannelScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            _isTalking ? 'TALKING' : 'HOLD TO TALK',
+                            _isTalking
+                                ? 'TALKING'
+                                : _reconnecting
+                                ? 'WAIT...'
+                                : 'HOLD TO TALK',
                             style: TextStyle(
                               color: _isTalking
                                   ? _white
