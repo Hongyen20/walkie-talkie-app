@@ -25,19 +25,30 @@ func NewAuthService(userRepo *repository.UserRepository) *AuthService {
 
 // Register
 func (s *AuthService) Register(ctx context.Context, username, password, displayName string) (*model.User, error) {
-	// 1. Check username
+	// 1. Validate input
+	if len(username) == 0 {
+		return nil, errors.New("Username is required")
+	}
+	if len(displayName) == 0 {
+		return nil, errors.New("Display name is required")
+	}
+	if len(password) < 8 {
+		return nil, errors.New("Password must be at least 8 characters")
+	}
+
+	// 2. Check username duplicate
 	existing, _ := s.userRepo.FindByUserName(ctx, username)
 	if existing != nil {
 		return nil, errors.New("Username already exists")
 	}
 
-	// 2. Hash password
+	// 3. Hash password
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
 	}
 
-	// 3. New user
+	// 4. New user
 	user := &model.User{
 		Username:    username,
 		Password:    string(hash),
@@ -77,6 +88,9 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userID primitive.Object
 		fields["display_name"] = displayName
 	}
 	if newPassword != "" {
+		if len(newPassword) < 8 {
+			return errors.New("Password must be at least 8 characters")
+		}
 		hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 		if err != nil {
 			return err
@@ -121,7 +135,7 @@ func generateJWT(user *model.User) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id":  user.ID.Hex(),
 		"username": user.Username,
-		"exp":      time.Now().Add(7 * 24 * time.Hour).Unix(), // hết hạn 7 ngày
+		"exp":      time.Now().Add(7 * 24 * time.Hour).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(os.Getenv("JWT_SECRET")))

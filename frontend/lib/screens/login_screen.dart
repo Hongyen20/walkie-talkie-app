@@ -50,7 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
           MaterialPageRoute(builder: (_) => RoomListScreen(user: user)),
         );
       } else {
-        // FIX: Lấy message lỗi từ result nếu có, fallback về message mặc định
+
         final msg = result['error']?.toString() ?? '';
 setState(() {
   _error = msg.isNotEmpty ? msg : 'Incorrect username or password';
